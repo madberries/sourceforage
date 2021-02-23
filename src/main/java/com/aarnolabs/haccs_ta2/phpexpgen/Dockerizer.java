@@ -52,7 +52,7 @@ public class Dockerizer extends BaseCmd {
         }
 
         File template = new File(
-                oldTemplate ? "/home/jeikenberry/haccs/baseline2" : "/home/jeikenberry/haccs/baseline");
+                oldTemplate ? "../../templates/baseline_old" : "../../templates/baseline_new");
         if (!template.exists() || !template.isDirectory()) {
             throw new RuntimeException("Couldn't locate template directory: " + template);
         }

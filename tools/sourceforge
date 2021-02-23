@@ -1,0 +1,632 @@
+#!/usr/bin/python3
+
+import os
+import sys
+
+# Make sure that the HACCSTA2_HOME env var is set, since we need to add this to
+# our python path
+haccs_ta2_home = os.environ.get('HACCSTA2_HOME')
+if haccs_ta2_home is None:
+    print('ERROR: HACCSTA2_HOME is not set (this should point to the root of '
+            'the \'haccs-ta2\' repo)', file=sys.stderr)
+    exit(1)
+sys.path.append(os.path.join(haccs_ta2_home, 'cve2'))
+
+import argparse
+import json
+import re
+import requests
+import selectors
+import shutil
+import urllib.parse
+
+import gzip
+import tarfile
+import zipfile
+
+from datetime import datetime
+from enum import IntEnum
+from bs4 import BeautifulSoup
+from cve import CVE, Product
+from packaging import version
+from io import BytesIO
+from fuzzywuzzy import fuzz
+
+import asyncio
+from asyncio import TimeoutError
+from asyncio.subprocess import PIPE, STDOUT
+
+class Op(IntEnum):
+    LE = 1
+    LT = 2
+    EQ = 3
+    GT = 4
+    GE = 5
+
+# Globals
+op_map          = { '<': Op.LT, '<=': Op.LE, '=': Op.EQ, '>': Op.GT, '>=': Op.GE }
+inv_op_map      = { v : k for k, v in op_map.items() }
+supported_exts  = [ '.zip', '.tar.gz', '.tgz', '.tar.bz2' ]
+cve_dirs_map    = dict()
+
+# "Constants"
+haccs_cmd_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+haccs_cmd = os.path.join(haccs_cmd_dir, './build/install/haccscmd/bin/haccscmd')
+haccs_cmd = os.path.realpath(haccs_cmd)
+sforge_dir              = 'sourceforge'
+default_haccsvm_user    = 'haccs'
+default_haccsvm_host    = '127.0.0.1'
+gaaphp_timeout          = 30   # 30 second timeout
+
+class UnsupportedArchive(Exception):
+    pass
+
+class InvalidVersionFormat(Exception):
+    pass
+
+def generate_cve_dirname(cve):
+    cve_lower = cve.lower()
+    try:
+        last_idx = cve_dirs_map[cve_lower]
+    except KeyError:
+        last_idx = 0
+    last_idx = last_idx + 1
+    cve_dirs_map[cve_lower] = last_idx
+    return cve_lower + '_%04d' % last_idx
+
+def is_supported_archive_type(filename):
+    for ext in supported_exts:
+        if filename.endswith(ext):
+            return True
+    return False
+
+def list_archive_contents(filename, contents):
+    mem_zip = BytesIO(contents)
+    if filename.endswith('.zip'):
+        with zipfile.ZipFile(mem_zip, mode="r") as zf:
+            return zf.namelist()
+    else:
+        if filename.endswith('.tar.gz') or filename.endswith('.tgz'):
+            mode = 'r:gz'
+        elif filename.endswith('.tar.bz2'):
+            mode = 'r:bz2'
+        else:
+            raise UnsupportedArchive('File type not supported: ' + filename)
+
+        names = []
+        with tarfile.open(fileobj=mem_zip, mode=mode) as tf:
+            for member in tf.getmembers():
+                names.append(member.name)
+        return names
+
+def extract_archive(filename, contents, extracted_path):
+    mem_zip = BytesIO(contents)
+    if filename.endswith('.zip'):
+        with zipfile.ZipFile(mem_zip, mode="r") as zf:
+            zf.extractall(extracted_path)
+    else:
+        if filename.endswith('.tar.gz') or filename.endswith('.tgz'):
+            mode = 'r:gz'
+        elif filename.endswith('.tar.bz2'):
+            mode = 'r:bz2'
+        else:
+            raise UnsupportedArchive('File type not supported: ' + filename)
+
+        with tarfile.open(fileobj=mem_zip, mode=mode) as tf:
+            tf.extractall(extracted_path)
+
+def get_filename_from_download_url(download_url):
+    url_split = download_url.split('/')
+    assert(url_split[len(url_split)-1] == 'download'), \
+            'Unexpected url format: ' + download_url
+    return url_split[len(url_split)-2]
+
+def without_ext(filename):
+    for ext in supported_exts:
+        try:
+            idx = filename.rindex(ext)
+            return filename[:idx]
+        except ValueError:
+            pass
+    raise UnsupportedArchive('File type not supported: ' + filename)
+
+class Version:
+    def __init__(self, vers):
+        vers = vers.strip()
+        if vers == '*':
+            self.any = True
+        else:
+            self.any = False
+            if vers.startswith('<') or vers.startswith('>'):
+                p = re.compile('((<|>)=?)\s*([0-9\.]+)(.*)')
+                m = p.match(vers)
+                if not bool(m):
+                    raise InvalidVersionFormat(vers)
+                self.op = op_map[m.group(1)]
+                self.vers = m.group(3)
+                self.extra = m.group(4)
+            else:
+                self.op = Op.EQ
+                p = re.compile('([0-9\.]+)(.*)')
+                m = p.match(vers)
+                if not bool(m):
+                    raise InvalidVersionFormat(vers)
+                self.vers = m.group(1)
+                self.extra = m.group(2)
+            self.parsed = version.parse(self.vers)
+            self.full = self.vers + self.extra
+    def check(self, vers):
+        assert(not vers.any and vers.op is Op.EQ)
+        if self.any:
+            return True
+        print('Checking %s %s %s' % (vers.vers, inv_op_map[self.op], self.vers))
+        if self.op is Op.LE:
+            return vers.parsed <= self.parsed
+        if self.op is Op.LT:
+            return vers.parsed < self.parsed
+        if self.op is Op.EQ:
+            return vers.parsed == self.parsed
+        if self.op is Op.GT:
+            return vers.parsed > self.parsed
+        if self.op is Op.GE:
+            return vers.parsed >= self.parsed
+        assert(false), 'Invalid operator: ' + self.op
+    def __str__(self):
+        if self.any:
+            return '*'
+        return self.full
+
+class VersionRange:
+    def __init__(self, lower, upper):
+        self.lower = lower
+        self.upper = upper
+    def check(self, vers):
+        return self.lower.check(vers) and self.upper.check(vers)
+    def __str__(self):
+        if self.lower.any or self.lower.op is Op.GE:
+            if self.upper.any or self.upper.op is Op.LE:
+                return '[%s .. %s]' % (self.lower, self.upper)
+            assert(not self.upper.any and self.upper.op is Op.LT)
+            return '[%s .. %s)' % (self.lower, self.upper)
+        assert(not self.lower.any and self.lower.op is Op.GT)
+        if self.upper.any or self.upper.op is Op.LE:
+            return '(%s .. %s]' % (self.lower, self.upper)
+        assert(not self.upper.any and self.upper.op is Op.LT)
+        return '(%s .. %s)' % (self.lower, self.upper)
+
+def compute_version_range(vers, lower_bound, upper_bound):
+    vers_obj = Version(vers)
+    if not vers_obj.any:
+        assert(vers_obj.op is Op.EQ)
+        assert(lower_bound == '*' and upper_bound == '*')
+        return VersionRange(vers_obj, vers_obj)
+    else:
+        lower_version = Version(lower_bound)
+        upper_version = Version(upper_bound)
+        assert(lower_version.any or lower_version.op >= Op.GT), lower_version.vers
+        assert(upper_version.any or upper_version.op <= Op.LT), upper_version.vers
+        assert(lower_version.any or upper_version.any or \
+                lower_version.parsed <= upper_version.parsed), \
+                '%s > %s' % (lower_version.vers, upper_version.vers)
+        return VersionRange(lower_version, upper_version)
+
+def leaf_of_path(path):
+    if path.endswith(os.path.sep):
+        return os.path.basename(path[:-1])
+    return os.path.basename(path)
+
+def contains_substr(s, substr):
+    try:
+        return s.lower().index(substr.lower())
+    except ValueError:
+        return -1
+
+def find_codebase(project_name):
+    results_map = dict()
+    page = requests.get('https://sourceforge.net/directory/language:php/?q=' +
+            urllib.parse.quote(project_name))
+    contents = page.content
+    soup = BeautifulSoup(contents, 'html.parser')
+    projects = soup.find_all('a', {'class': 'result-heading-title'})
+    for project in projects:
+        link = project.get('href')
+        name = project.contents[1].string
+        results_map[name] = link
+    return results_map
+
+def get_codebase_file_listing(rel_path):
+    _, files = get_codebase_listing(rel_path, listing_type="file")
+    return files
+
+def get_codebase_dir_listing(rel_path):
+    folders, _ = get_codebase_listing(rel_path, listing_type='folder')
+    return folders
+
+def get_codebase_listing(rel_path, listing_type='file/folder'):
+    folders_map = dict()
+    files_map = dict()
+
+    if not rel_path.endswith(os.path.sep):
+        rel_path = rel_path + os.path.sep
+    if not rel_path.startswith(os.path.sep):
+        rel_path = os.path.sep + rel_path
+
+    print('Getting the %s listing of %s' % (listing_type, rel_path))
+    page = requests.get('https://sourceforge.net' + rel_path)
+    contents = page.content
+    soup = BeautifulSoup(contents, 'html.parser')
+
+    # Construct a listing of all file/folder -> url mappings found
+    # on this page.
+    for entity_type, entity_map in \
+            [('folder', folders_map), ('file', files_map)]:
+        entities = soup.find_all('tr', {'class': entity_type})
+        for entity in entities:
+            title = entity.get('title')
+            if title is not None:
+                entity_map[title] = entity.th.a.get('href')
+
+    return folders_map, files_map
+
+def generate_cve_props(cve_dir, cve, cpe, vuln_file, **kwargs):
+    cpe_split = cpe.split(':')
+    with open(os.path.join(cve_dir, '.cve.properties'), 'w') as cve_props_file:
+        print('cve=' + cve, file=cve_props_file)
+        print('cpe.product=' + cpe, file=cve_props_file)
+        print('version=' + cpe_split[5], file=cve_props_file)
+        print('vuln.file=' + vuln_file, file=cve_props_file)
+        print('register.globals=' + str(kwargs['reg_globals']).lower(),
+                file=cve_props_file)
+        print('sqlarity=' + str(kwargs['sqlarity']).lower(),
+                file=cve_props_file)
+
+async def run_cmd_async(cmd, cmd_msg, timeout=None, cwd=None):
+    cmd_str = ' '.join([str(v) for v in cmd])
+    print('** Running %s -- executing: %s' % (cmd_msg, cmd_str))
+    if cwd is not None:
+        print('** where CWD=(%s)...' % cwd)
+    p = await asyncio.create_subprocess_exec(*cmd, cwd=cwd,
+            stdout=PIPE, stderr=STDOUT)
+
+    # Read line (sequence of bytes ending with b'\n') asynchronously
+    while True:
+        try:
+            line = await asyncio.wait_for(p.stdout.readline(), timeout)
+        except TimeoutError:
+            pass
+        else:
+            if not line: # EOF
+                break
+            else:
+                os.write(sys.stdout.fileno(), line)
+                continue # While some criterium is satisfied
+        p.kill() # Timeout or some criterion is not satisfied
+        break
+    return await p.wait()
+
+def run_cmd(cmd, cmd_msg, timeout=None, cwd=None):
+    # Wait for the process to exit
+    if sys.platform == "win32":
+        loop = asyncio.ProactorEventLoop() # For subprocess' pipes on Windows
+        asyncio.set_event_loop(loop)
+    else:
+        loop = asyncio.get_event_loop()
+
+    # Check the return code and either True (on success) or False (on failure)
+    returncode = loop.run_until_complete(run_cmd_async(cmd, cmd_msg,
+        timeout=timeout, cwd=cwd))
+    if returncode != 0:
+        print('ERROR: Unable to run %s [return_code=%d]' %
+                (cmd_msg, returncode), file=sys.stderr)
+        return False
+    return True
+
+def download_version(url, vuln_files, cve, cpe, is_file):
+    # If the url provided was from a file listing, then the URL provided
+    # should already be the download URL
+    if is_file:
+        items = [ ('N/A', url) ]
+    else:
+        items = get_codebase_file_listing(url).items()
+
+    # Iterate through each file listing to download
+    for _, download_url in get_codebase_file_listing(url).items():
+        print('Downloading codebase ' + download_url)
+
+        # Extract the name of the file we are downloaded from the URL
+        filename = get_filename_from_download_url(download_url)
+
+        # Make sure that we support this archive type extension
+        if not is_supported_archive_type(filename):
+            print('Skipping... File extension not supported for file: '
+                    + filename)
+            continue
+
+        # Generate the download request
+        page = requests.get(download_url)
+        contents = page.content
+
+        # Make sure that this archive contains at least one of the vulnerable
+        # files
+        found_vuln_file = False
+        contents_list = list_archive_contents(filename, contents)
+        for vuln_file in vuln_files:
+            for f in contents_list:
+                try:
+                    idx = f.rindex(vuln_file)
+                    if idx == 0 or f[idx-1] == os.path.sep:
+                        print('Found vulnerable file: %s --> %s' % \
+                                (vuln_file, f))
+                        found_vuln_file = True
+                        vuln_file = f
+                        break
+                except ValueError:
+                    pass
+            if found_vuln_file:
+                break
+
+        if not found_vuln_file:
+            print('Unable to locate vulnerable file!')
+            return
+
+        # Make the CVE directory
+        common_root = os.path.commonpath(contents_list)
+        cve_dir = os.path.join(sforge_dir, generate_cve_dirname(cve))
+        os.mkdir(cve_dir)
+
+        # Find the common root, since we make need to create another
+        # directory level
+        if common_root == '':
+            # Ahh the all so very frustrating age-old problem of compressing
+            # the contents of a directory, rather than the directory itself!!
+            common_root = without_ext(filename)
+            path_to_codebase = os.path.join(cve_dir, common_root)
+            os.mkdir(path_to_codebase)
+            # Vulnerable file path needs to update, since the directory we
+            # create will be missing from it
+            vuln_file = os.path.join(common_root, vuln_file)
+        else:
+            path_to_codebase = cve_dir
+
+        # Extract the archive, and generate the properties file for dockerizing
+        # this project
+        extract_archive(filename, contents, path_to_codebase)
+        for reg_globals, sqlarity in \
+                [(False,False),(False,True),(True,False),(True,True)]:
+            generate_cve_props(cve_dir, cve, cpe, vuln_file,
+                    reg_globals=reg_globals, sqlarity=sqlarity)
+
+            # Dockerize this codebase
+            if reg_globals:
+                # Register globals requires the old template, since this option
+                # was removed in later versions of mysql
+                cmd = [haccs_cmd, 'dockerize', '--old', common_root]
+            else:
+                cmd = [haccs_cmd, 'dockerize', common_root]
+            if not run_cmd(cmd, 'dockerize cmd', cwd=cve_dir):
+                continue
+
+            # Move the CVE docker to a new directory so that we don't overwrite
+            # each consecutive run
+            if reg_globals:
+                if sqlarity:
+                    new_cve_dir = cve.lower() + '_gs'
+                else:
+                    new_cve_dir = cve.lower() + '_g'
+            elif sqlarity:
+                new_cve_dir = cve.lower() + '_s'
+            else:
+                new_cve_dir = cve.lower() + '_noargs'
+            shutil.move(os.path.join(cve_dir, cve.lower()),
+                        os.path.join(cve_dir, new_cve_dir))
+
+            # Run gaaphp and copy over JSON output to VM (timeout if it takes
+            # longer than 30 seconds)
+            cmd = [haccs_cmd, 'run', '--cve-dir', new_cve_dir]
+            if not run_cmd(cmd, 'gaaphp/comfortfuzz end-to-end',
+                    timeout=gaaphp_timeout, cwd=cve_dir):
+                continue
+
+            # Remove old copy of CVE docker
+            cmd = ['ssh', '-p', '5679', 'haccs@127.0.0.1', 'rm', '-rf', new_cve_dir]
+            if not run_cmd(cmd, 'remote rm of old CVE docker'):
+                continue
+
+            # Copy over CVE to VM
+            cmd = ['scp', '-P', '5679', '-r', '-p', new_cve_dir, 'haccs@127.0.0.1:/home/haccs']
+            if not run_cmd(cmd, 'remote copy CVE docker to VM', cwd=cve_dir):
+                continue
+
+            # Run comfortfuzz on JSON output
+            cmd = ['ssh', '-t', '-p', '5679', 'haccs@127.0.0.1', '/home/haccs/run_cfuzz.sh',
+                    new_cve_dir]
+            if not run_cmd(cmd, 'comfortfuzz'):
+                continue
+
+            value = input("Continue scraping? (y/N)... ")
+            if value.lower() != 'y':
+                quit()
+        break
+
+def find_versions_to_download(dir_listing, version_ranges, vuln_files, cve, cpe_map):
+    folders, files = dir_listing
+    for title, url in files.items():
+        # Attempt to extract at least a partial version number
+        p = re.compile('[^0-9\.]*([0-9]([0-9\.]*[0-9])?)[^0-9\.]*')
+        m = p.match(title)
+        if not bool(m):
+            continue
+
+        # Found a potential version number to check for
+        pot_vers = Version(m.group(1))
+
+        # TODO: This is not really complete since it doesn't account for
+        # extras (i.e. rc1, rc2, beta, etc...)
+        for vers_range in version_ranges:
+            if vers_range.check(pot_vers):
+                print('Checking version %s, url=[%s]' % (pot_vers, url))
+                download_version(url, vuln_files, cve, cpe_map[vers_range], True)
+
+    for title, url in folders.items():
+        try:
+            pot_vers = Version(title)
+            for vers_range in version_ranges:
+                if vers_range.check(pot_vers):
+                    print('Checking version %s, url=[%s]' % (pot_vers, url))
+                    download_version(url, vuln_files, cve, cpe_map[vers_range], False)
+        except InvalidVersionFormat:
+            print('Finding versions in ' + title)
+            find_versions_to_download(get_codebase_listing(url), version_ranges,
+                    vuln_files, cve, cpe_map)
+
+def get_download_urls(rel_paths):
+    results = []
+    for rel_path in rel_paths:
+        results.append(get_codebase_file_listing(rel_path))
+    return results
+
+def search_for_name0(desc, name):
+    search_idx = contains_substr(desc, name)
+    if search_idx >= 0:
+        return desc[search_idx : search_idx + len(name)]
+    for replace in [ ' ', '-' ]:
+        search_idx = contains_substr(desc, name.replace('_', replace))
+        if search_idx >= 0:
+            return desc[search_idx : search_idx + len(name)]
+    return None
+
+def search_for_name(desc, first, second):
+    if first != second:
+        result = search_for_name0(desc, first + ' ' + second)
+        if result is None:
+            return search_for_name0(desc, first)
+    else:
+        return search_for_name0(desc, first)
+
+def border(s):
+    x = '*' * (len(s)+4)
+    return '%s\n* %s *\n%s' % (x, s, x)
+
+def main(cmd_line):
+
+    # Parse through all NVD files specified on the command line:
+    nvd_inputs = []
+    for infile in cmd_line.infiles:
+        if ("gz" in infile):
+            with gzip.GzipFile(infile, 'r') as f:
+                input = (json.load(f))
+                input['filename'] = infile
+                nvd_inputs.append (input)
+        else:
+            with open (infile, 'r') as f:
+                input = (json.load(f))
+                input['filename'] = infile
+                nvd_inputs.append (input)
+
+    # Start from a fresh sourceforge directory
+    if os.path.exists(sforge_dir):
+        if not os.path.isdir(sforge_dir):
+            print('ERROR: \'%s\' already exists, and is not a directory'
+                    % sforge_dir, file=sys.stderr)
+            exit(1)
+        shutil.rmtree(sforge_dir)
+    os.mkdir(sforge_dir)
+
+    # For each json file, parse the CVE items and determine whther this is a
+    # queriable SQL injection.
+    for nvd_data in nvd_inputs:
+        print("Have %d CVEs to process from %s" %
+                (len(nvd_data['CVE_Items']),nvd_data['filename']))
+
+        for cve_base in nvd_data['CVE_Items']:
+            cve = CVE(cve_base)
+
+            # Make sure CPE information was found, so we can pull the version
+            # number easily from this
+            if len(cve.cpe_list_flat) <= 0:
+                continue
+
+            # Is an SQL injection possible?
+            inj_possible = False
+            for cwe in cve.get_cwes():
+                try:
+                    idx = cwe.index('CWE-')
+                    if idx != 0:
+                        inj_possible = True
+                    if int(cwe[4:]) == 89:
+                        inj_possible = True;
+                except ValueError:
+                    inj_possible = True
+
+            if inj_possible:
+                vuln_files = set()
+                for word in cve.description.split(' '):
+                    if word.endswith('.php'):
+                        vuln_files.add(word)
+
+                # An SQL injection is possible, and there is one or more
+                # vulnerable PHP files found.
+                if len(vuln_files) > 0:
+                    #print(cve.cve, cve.get_cwes(), cve.cpe_list_flat)
+                    #print(cve.description)
+                    #print(vuln_files)
+                    #print(cve.cpe_list_flat)
+                    valid_ranges = []
+                    first = set()
+                    second = set()
+                    cpe_map = dict()
+                    #print('CPE_list=' + str(cve.cpe_list_flat))
+                    for cpe_info in cve.cpe_list_flat:
+                        cpe_split = cpe_info[0].split(':')
+                        first.add(cpe_split[3])
+                        second.add(cpe_split[4])
+                        version_minor = cpe_split[6]
+                        version_range = compute_version_range(
+                                cpe_split[5], cpe_info[1], cpe_info[2])
+                        if version_minor != '*':
+                            # Just write over the lower/upper extra, because
+                            # I've found no consistency with the minor version
+                            # as listed in the CPE!
+                            if (not version_range.lower.any):
+                                version_range.lower.extra = version_minor
+                            if (not version_range.upper.any):
+                                version_range.upper.extra = version_minor
+                        valid_ranges.append(version_range)
+                        cpe_map[version_range] = cpe_info[0]
+
+                    for f in first:
+                        for s in second:
+                            print(border('Starting search for %s:%s in %s' \
+                                    % (f, s, cve.cve)))
+                            name_to_search = search_for_name(cve.description, f, s)
+                            if name_to_search is not None:
+                                print('Searching for codebase "%s"...' % name_to_search)
+                                results_map = find_codebase(name_to_search)
+                                k = 0
+                                for key, value in results_map.items():
+                                    if fuzz.ratio(key, name_to_search) < 65:
+                                        print('Skipping project "%s" due to fuzzy mismatch' % key)
+                                        continue
+                                    else:
+                                        print('Matched fuzzy "%s" ~= "%s"' % (key, name_to_search))
+                                    dir_listing = get_codebase_listing(os.path.join(value, 'files'))
+                                    find_versions_to_download(dir_listing,
+                                            valid_ranges, vuln_files, cve.cve, cpe_map)
+                                    if k > 5:
+                                        print('Skipping... Too many results!')
+                                        break
+                                    k = k + 1
+
+def parse_args():
+    """
+    parse command line arguments
+    """
+    parser = argparse.ArgumentParser(description="Parses NVD json data feed")
+    parser.add_argument('infiles', nargs="+",
+            help="Compressed json file as downloaded from NVD's website, e.g. "
+            "https://nvd.nist.gov/feeds/json/cve/1.0/nvdcve-1.0-2018.json.gz")
+    return parser.parse_args()
+
+if __name__ == "__main__":
+    args = parse_args()
+    sys.exit(main(args))

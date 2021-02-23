@@ -1,0 +1,227 @@
+#!/usr/bin/python3
+#
+# USAGE: run_end_to_end <path-to-webapp>
+# EXIT_CODE: 0 if exploit was excersid, otherwise 1.
+
+import itertools
+import glob
+import os
+import re
+import subprocess
+import requests
+import shutil
+import sys
+import time
+
+from bs4 import BeautifulSoup
+from subprocess import STDOUT, PIPE
+from tempfile import mkstemp
+from threading import Thread
+
+# "Constants"
+possible_config_names = [ 'common.php', 'config.php' ]
+dbhost = 'localhost'
+dbname = 'somedb'
+dbuser = 'root'
+dbpass = ''
+dbhost_rep = [['dbhost', 'hostname'], [dbhost]]
+dbname_rep = [['dbname', 'default_db'], [dbname]]
+dbuser_rep = [['dbuser', 'dbusername'], [dbuser]]
+dbpass_rep = [['dbpass', 'dbpassword'], [dbpass]]
+
+def sed0(fin, fout, pattern, replace, count):
+    num_replaced = count
+    success = False
+
+    for line in fin:
+        out = re.sub(pattern, replace, line)
+        fout.write(out)
+
+        if out != line:
+            success = True
+            num_replaced += 1
+        if count and num_replaced > count:
+            break
+
+    try:
+        fout.writelines(fin.readlines())
+    except Exception as E:
+        raise E
+
+    return success
+
+def sed(pattern, replace, source, dest=None, count=0):
+    """Reads a source file and writes the destination file.
+
+    In each line, replaces pattern with replace.
+
+    Args:
+        pattern (str): pattern to match (can be re.pattern)
+        replace (str): replacement str
+        source  (str): input filename
+        count (int): number of occurrences to replace
+        dest (str):   destination filename, if not given, source will be over written.
+    """
+
+    success = False
+    with open(source, 'r') as fin:
+        if dest:
+            with open(dest, 'w') as fout:
+                success = sed0(fin, fout, pattern, replace, count)
+        else:
+            fd, name = mkstemp()
+            with open(name, 'w') as fout:
+                success = sed0(fin, fout, pattern, replace, count)
+
+    if not dest:
+        shutil.move(name, source)
+
+    return success
+
+def make_replacements(replacement_list):
+    for varname, value in itertools.product(*replacement_list):
+        if sed(r'(^\$' + varname + '\s*=\s*("|\'))[^"]+(("|\')\s*;.*$)',
+                r'\1' + value + r'\3', config_file, count=1):
+            break
+
+def strip_ansi_color(data):
+    """Remove ANSI colors from string or bytes."""
+    if isinstance(data, bytes):
+        data = data.decode("utf-8")
+
+    # Taken from tabulate
+    invisible_codes = re.compile(r"\x1b\[\d*m")
+
+    return re.sub(invisible_codes, "", data)
+
+class ExploitChecker(Thread):
+
+    def __init__(self):
+        Thread.__init__(self)
+        self.result = False   # Did we find the exploit?
+        self.start()
+
+    def run(self):
+        print('Reading from fifo')
+        print('-' * 80)
+        with open('/home/haccs/fifo') as fifo:
+            output = strip_ansi_color(fifo.read())
+            print(output)
+            try:
+                if output.index('"GET /static/cmd.sh HTTP/1.1" 200 -') > 0:
+                    self.result = True
+            except ValueError:
+                pass
+        print('-' * 80)
+        print('Done reading from fifo')
+
+if __name__ == "__main__":
+    if len(sys.argv) != 2:
+        print('USAGE: %s <path-to-webapp>' % sys.argv[0], file=sys.stderr)
+        exit(1)
+
+    # Extract CVE directory from application path.
+    path_to_app = sys.argv[1]
+    cve_dir = os.path.dirname(os.path.dirname(path_to_app))
+    if cve_dir == '':
+        print('ERROR: Unable to locate cve directory relative to: '
+                + path_to_app, file=sys.stderr)
+
+    # Step 1) Find a configuration file, and check for hardcoded database
+    #         information (i.e. host, user, pass, etc...) replacing the
+    #         values needed for our particular setup.
+    for config_name in possible_config_names:
+        to_search = path_to_app + '/**/' + config_name
+        for config_file in glob.glob(to_search, recursive=True):
+            make_replacements(dbhost_rep)
+            make_replacements(dbname_rep)
+            make_replacements(dbuser_rep)
+            make_replacements(dbpass_rep)
+
+    # Step 2) Run the docker container.
+    p = subprocess.Popen([ './run.sh' ], stdout=PIPE, stderr=STDOUT, cwd=cve_dir)
+    initialized = False
+    while True:
+        output = p.stdout.readline()
+        if output == '' and p.poll() is not None:
+            break
+        if output:
+            line = output.strip().decode("utf-8")
+            print(line)
+            if line == 'App DB setup complete.':
+                initialized = True
+                break
+        else:
+            print('ERROR: unexpected EOF!', file=sys.stderr)
+            break
+
+    found_exploit = False
+    if initialized:
+        # Wait a couple seconds after initialization for good measure!
+        time.sleep(2.0)
+
+        #######################################################################
+        # Step 3) Locate and run the install script (if there is one)         #
+        #######################################################################
+        to_search = path_to_app + '/**/install.php'
+        for install_file in glob.glob(to_search, recursive=True):
+            path_to_install = os.path.relpath(install_file, path_to_app)
+            url = 'http://localhost/' + path_to_install
+            print('Attempting to install software from URL: ' + url)
+            page = requests.get(url)
+            if page.status_code != 200:
+                print('ERROR: %s returned status code = %d'
+                        % (url, page.status_code))
+                continue
+            contents = page.content
+            print(contents)
+
+            # TODO: Handle case where the install script returns a form.
+            #soup = BeautifulSoup(contents, 'html.parser')
+            break  # Only process the first script found
+
+        # Wait for the exploit to trigger, by reading from the fifo that the
+        # flask server will be writing to.
+        checker = ExploitChecker()
+        cve = os.path.basename(cve_dir)
+        subprocess.run([ '/home/haccs/run_exploit.sh', cve ])  # wait for proc!
+
+        # TODO: Before we kill the process, we should probably add a lock here
+        # to ensure that we have connected and read from the stream in the
+        # ExploitChecker thread.
+
+        # Kill flask so that the underlying buffer of ExploitChecker can flush.
+        # Once flushed, ExploitChecker will check the output to see if the
+        # exploit was exercised.
+        alive = True
+        attempts = 5   # Only attempt 5 times
+        while alive and attempts > 0:
+            pkill = subprocess.run([ 'pkill' , '-f', 'flask' ])
+            alive = pkill.returncode != 0
+            time.sleep(0.5)
+
+        # Check to see that we were able to kill the process, and if not then
+        # error out.
+        if alive:
+            print('ERROR: Unable to kill flask process!', file=sys.stderr)
+            exit(1)
+
+        # Ok, now let's just wait
+        checker.join()
+        found_exploit = checker.result
+    else:
+        print('ERROR: Docker did not initialize!', file=sys.stderr)
+
+    # TODO: Since this is process cleanup, we should put this in a trap.
+    # Stop the docker container, and wait for it to die
+    subprocess.run(['/home/haccs/scripts/docker-stop'])
+    print('Waiting for docker container to die!')
+    p.wait()
+
+    # Did we exercise the exploit?
+    if found_exploit:
+        print('SUCCESS: exploit was exercised!')
+        exit(0)
+    else:
+        print('FAILURE: exploit was not exercised!')
+        exit(1)
