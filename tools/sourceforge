@@ -499,7 +499,10 @@ def search_for_name(desc, first, second):
     if first != second:
         result = search_for_name0(desc, first + ' ' + second)
         if result is None:
-            return search_for_name0(desc, first)
+            result = search_for_name0(desc, second)
+        if result is None:
+            result = search_for_name0(desc, first)
+        return result
     else:
         return search_for_name0(desc, first)
 
