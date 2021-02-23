@@ -44,9 +44,6 @@ class Op(IntEnum):
     GE = 5
 
 # Globals
-op_map          = { '<': Op.LT, '<=': Op.LE, '=': Op.EQ, '>': Op.GT, '>=': Op.GE }
-inv_op_map      = { v : k for k, v in op_map.items() }
-supported_exts  = [ '.zip', '.tar.gz', '.tgz', '.tar.bz2' ]
 cve_dirs_map    = dict()
 
 # "Constants"
@@ -57,6 +54,22 @@ sforge_dir              = 'sourceforge'
 default_haccsvm_user    = 'haccs'
 default_haccsvm_host    = '127.0.0.1'
 gaaphp_timeout          = 30   # 30 second timeout
+op_map                  = {
+        '<': Op.LT,
+        '<=': Op.LE,
+        '=': Op.EQ,
+        '>': Op.GT,
+        '>=': Op.GE
+}
+inv_op_map              = { v : k for k, v in op_map.items() }
+supported_exts          = [ '.zip', '.tar.gz', '.tgz', '.tar.bz2' ]
+capable_of_working      = [ 'cve-2005-2466', 'cve-2006-0074', 'cve-2006-0079',
+        'cve-2006-0135', 'cve-2006-1271', 'cve-2006-1481', 'cve-2006-7088',
+        'cve-2007-3534', 'cve-2008-0154', 'cve-2008-0159', 'cve-2008-0424',
+        'cve-2008-0677', 'cve-2008-4092', 'cve-2008-6081', 'cve-2008-6142',
+        'cve-2009-0881', 'cve-2009-1500', 'cve-2009-1814', 'cve-2009-2036',
+        'cve-2009-2096', 'cve-2010-1538', 'cve-2010-4876', 'cve-2010-4935',
+        'cve-2014-9440', 'cve-2015-1372' ]
 
 class UnsupportedArchive(Exception):
     pass
@@ -330,7 +343,7 @@ def download_version(url, vuln_files, cve, cpe, is_file):
         items = get_codebase_file_listing(url).items()
 
     # Iterate through each file listing to download
-    for _, download_url in get_codebase_file_listing(url).items():
+    for _, download_url in items:
         print('Downloading codebase ' + download_url)
 
         # Extract the name of the file we are downloaded from the URL
@@ -511,7 +524,6 @@ def border(s):
     return '%s\n* %s *\n%s' % (x, s, x)
 
 def main(cmd_line):
-
     # Parse through all NVD files specified on the command line:
     nvd_inputs = []
     for infile in cmd_line.infiles:
@@ -543,6 +555,12 @@ def main(cmd_line):
 
         for cve_base in nvd_data['CVE_Items']:
             cve = CVE(cve_base)
+
+            # If we are only running CVEs that have been verified to work
+            # end-to-end, and this CVE is not one that has been verified
+            # to work, then skip this CVE.
+            if cmd_line.verified and not cve.cve.lower() in capable_of_working:
+                continue
 
             # Make sure CPE information was found, so we can pull the version
             # number easily from this
@@ -628,6 +646,8 @@ def parse_args():
     parser.add_argument('infiles', nargs="+",
             help="Compressed json file as downloaded from NVD's website, e.g. "
             "https://nvd.nist.gov/feeds/json/cve/1.0/nvdcve-1.0-2018.json.gz")
+    parser.add_argument('-v', '--verified', action='store_true',
+            help='Run only CVEs that have been verified to work end-to-end')
     return parser.parse_args()
 
 if __name__ == "__main__":
