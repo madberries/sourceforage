@@ -456,6 +456,15 @@ def download_version(url, vuln_files, cve, cpe, is_file):
             if not run_cmd(cmd, 'comfortfuzz'):
                 continue
 
+            # Run the exploit end-to-end
+            webapp_path = os.path.join(os.path.join('/home/haccs', new_cve_dir),
+                    os.path.join('data', common_root))
+            cmd = ['ssh', '-t', '-p', '5679', 'haccs@127.0.0.1',
+                    '/home/haccs/run_end_to_end', webapp_path]
+            if not run_cmd(cmd, 'exploit end-to-end'):
+                print('WARNING: Exploit not exercised!')
+                continue
+
             value = input("Continue scraping? (y/N)... ")
             if value.lower() != 'y':
                 quit()

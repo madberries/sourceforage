@@ -180,7 +180,7 @@ if __name__ == "__main__":
             #soup = BeautifulSoup(contents, 'html.parser')
             break  # Only process the first script found
 
-        # Wait for the exploit to trigger, by reading from the fifo that the
+        # Wait for the exploit to trigger by reading from the fifo that the
         # flask server will be writing to.
         checker = ExploitChecker()
         cve = os.path.basename(cve_dir)
@@ -206,7 +206,7 @@ if __name__ == "__main__":
             print('ERROR: Unable to kill flask process!', file=sys.stderr)
             exit(1)
 
-        # Ok, now let's just wait
+        # Ok, now let's just wait for the result of the exploit
         checker.join()
         found_exploit = checker.result
     else:
