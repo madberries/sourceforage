@@ -25,8 +25,10 @@ if haccs_ta2_home is None:
             'the \'haccs-ta2\' repo)', file=sys.stderr)
     exit(1)
 sys.path.append(os.path.join(haccs_ta2_home, 'cve2'))
+from cve import CVE, Product
 
 import argparse
+import gzip
 import itertools
 import json
 import re
@@ -35,19 +37,17 @@ import selectors
 import shutil
 import urllib.parse
 
-import gzip
-import tarfile
-import zipfile
-
 from datetime import datetime
 from enum import IntEnum
 from bs4 import BeautifulSoup
-from cve import CVE, Product
 from packaging import version
-from io import BytesIO
 from fuzzywuzzy import fuzz
 
-from helpers.utils import run_cmd
+from helpers.file_utils import without_ext
+from helpers.process_utils import run_cmd
+from helpers.string_utils import border
+from helpers.zip_utils import extract_archive, is_supported_archive_type, \
+                              list_archive_contents
 
 class Op(IntEnum):
     LE = 1
@@ -75,7 +75,6 @@ op_map                  = {
         '>=': Op.GE
 }
 inv_op_map              = { v : k for k, v in op_map.items() }
-supported_exts          = [ '.zip', '.tar.gz', '.tgz', '.tar.bz2' ]
 capable_of_working      = {
         # Format = CVE: (new(True)/old(False), register_globals, sqlarity)
         "cve-2005-2466": (False, True, False),
@@ -121,61 +120,11 @@ def generate_cve_dirname(cve):
     cve_dirs_map[cve_lower] = last_idx
     return cve_lower + '_%04d' % last_idx
 
-def is_supported_archive_type(filename):
-    for ext in supported_exts:
-        if filename.endswith(ext):
-            return True
-    return False
-
-def list_archive_contents(filename, contents):
-    mem_zip = BytesIO(contents)
-    if filename.endswith('.zip'):
-        with zipfile.ZipFile(mem_zip, mode="r") as zf:
-            return zf.namelist()
-    else:
-        if filename.endswith('.tar.gz') or filename.endswith('.tgz'):
-            mode = 'r:gz'
-        elif filename.endswith('.tar.bz2'):
-            mode = 'r:bz2'
-        else:
-            raise UnsupportedArchive('File type not supported: ' + filename)
-
-        names = []
-        with tarfile.open(fileobj=mem_zip, mode=mode) as tf:
-            for member in tf.getmembers():
-                names.append(member.name)
-        return names
-
-def extract_archive(filename, contents, extracted_path):
-    mem_zip = BytesIO(contents)
-    if filename.endswith('.zip'):
-        with zipfile.ZipFile(mem_zip, mode="r") as zf:
-            zf.extractall(extracted_path)
-    else:
-        if filename.endswith('.tar.gz') or filename.endswith('.tgz'):
-            mode = 'r:gz'
-        elif filename.endswith('.tar.bz2'):
-            mode = 'r:bz2'
-        else:
-            raise UnsupportedArchive('File type not supported: ' + filename)
-
-        with tarfile.open(fileobj=mem_zip, mode=mode) as tf:
-            tf.extractall(extracted_path)
-
 def get_filename_from_download_url(download_url):
     url_split = download_url.split('/')
     assert(url_split[len(url_split)-1] == 'download'), \
             'Unexpected url format: ' + download_url
     return url_split[len(url_split)-2]
-
-def without_ext(filename):
-    for ext in supported_exts:
-        try:
-            idx = filename.rindex(ext)
-            return filename[:idx]
-        except ValueError:
-            pass
-    raise UnsupportedArchive('File type not supported: ' + filename)
 
 class Version:
     def __init__(self, vers):
@@ -524,10 +473,6 @@ def search_for_name(desc, first, second):
         return result
     else:
         return search_for_name0(desc, first)
-
-def border(s):
-    x = '*' * (len(s)+4)
-    return '%s\n* %s *\n%s' % (x, s, x)
 
 def main(cmd_line):
     # TODO: Rewrite this by puttting code in a class and using a member

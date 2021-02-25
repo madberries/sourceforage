@@ -5,22 +5,19 @@
 # EXIT_CODE: 0 if exploit was excersid, otherwise 1.
 
 import glob
-import itertools
 import os
-import re
 import requests
-import shutil
 import subprocess
 import sys
 import time
 
 from bs4 import BeautifulSoup
-from subprocess import DEVNULL, PIPE, STDOUT
-from tempfile import mkstemp
-from threading import Thread
-
-from helpers.utils import run_cmd
+from helpers.process_utils import run_cmd, get_running_dockers, stop_docker
+from helpers.string_utils import make_replacements
 from http.server import HTTPServer, BaseHTTPRequestHandler
+from impl.exploit_checker import ExploitChecker, http_server_addr, \
+                                 http_server_port
+from subprocess import PIPE, STDOUT
 
 # "Constants"
 haccs_cmd_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
@@ -33,122 +30,9 @@ dbhost_rep = [['dbhost', 'hostname'], [dbhost]]
 dbname_rep = [['dbname', 'default_db'], [dbname]]
 dbuser_rep = [['dbuser', 'dbusername'], [dbuser]]
 dbpass_rep = [['dbpass', 'dbpassword'], [dbpass]]
-addr = '172.17.0.1'
-port = 5000
 exploit_timeout = 30
 
-def sed0(fin, fout, pattern, replace, count):
-    num_replaced = count
-    success = False
-
-    for line in fin:
-        out = re.sub(pattern, replace, line)
-        fout.write(out)
-
-        if out != line:
-            success = True
-            num_replaced += 1
-        if count and num_replaced > count:
-            break
-
-    try:
-        fout.writelines(fin.readlines())
-    except Exception as E:
-        raise E
-
-    return success
-
-def sed(pattern, replace, source, dest=None, count=0):
-    """Reads a source file and writes the destination file.
-
-    In each line, replaces pattern with replace.
-
-    Args:
-        pattern (str): pattern to match (can be re.pattern)
-        replace (str): replacement str
-        source  (str): input filename
-        count (int): number of occurrences to replace
-        dest (str): destination filename, if not given, source will
-                    be over written.
-    """
-
-    success = False
-    with open(source, 'r') as fin:
-        if dest:
-            with open(dest, 'w') as fout:
-                success = sed0(fin, fout, pattern, replace, count)
-        else:
-            fd, name = mkstemp()
-            with open(name, 'w') as fout:
-                success = sed0(fin, fout, pattern, replace, count)
-
-    if not dest:
-        shutil.move(name, source)
-
-    return success
-
-def make_replacements(replacement_list):
-    for varname, value in itertools.product(*replacement_list):
-        if sed(r'(^\$' + varname + '\s*=\s*("|\'))[^"]+(("|\')\s*;.*$)',
-                r'\1' + value + r'\3', config_file, count=1):
-            break
-
-def strip_ansi_color(data):
-    """Remove ANSI colors from string or bytes."""
-    if isinstance(data, bytes):
-        data = data.decode("utf-8")
-
-    # Taken from tabulate
-    invisible_codes = re.compile(r"\x1b\[\d*m")
-
-    return re.sub(invisible_codes, "", data)
-
-def stop_docker(container_id, image_name):
-    print('Stopping docker container (%s) for image \'%s\'... ' %
-            (container_id, image_name), end='')
-    subprocess.run(['docker', 'stop', container_id], stdout=DEVNULL)
-    print('DONE!')
-
-def get_running_dockers(name=None):
-    running_dockers = []
-    if name is None:
-        out, _ = subprocess.Popen(['docker', 'container', 'ls'],
-                stdout=PIPE).communicate()
-    else:
-        out, _ = subprocess.Popen(['docker', 'container', 'ls',
-            '-f', 'ancestor=' + name], stdout=PIPE).communicate()
-    out = out.splitlines()[1:]  # grab only the relevant lines
-    for line in out:
-        split_line = line.decode('utf-8').split()
-        running_dockers.append(split_line[0])
-    return running_dockers
-
-class HTTPHandler(BaseHTTPRequestHandler):
-    def do_HEAD(self):
-        self.send_response(200)
-        self.send_header("Content-type", "text/html")
-        self.end_headers()
-
-    def do_GET(self):
-        self.send_response(200)
-        self.send_header("Content-type", "text/x-shellscript")
-        self.end_headers()
-        self.wfile.write(bytes('#!/bin/sh\n\ntouch /tmp/TESTFILE\n\n', 'utf-8'))
-        globals()['received'] = True
-
-class ExploitChecker(Thread):
-
-    def __init__(self):
-        Thread.__init__(self)
-        self.server = HTTPServer((addr, port), HTTPHandler)
-        self.start()
-
-    def run(self):
-        print('Started http server on %s:%d' % (addr, port))
-        self.server.handle_request()   # just handle one request
-
 if __name__ == "__main__":
-    globals()['received'] = False
     if len(sys.argv) != 3:
         print('USAGE: %s <cve> <path-to-webapp>' % sys.argv[0], file=sys.stderr)
         exit(1)
@@ -167,10 +51,10 @@ if __name__ == "__main__":
     for config_name in possible_config_names:
         to_search = path_to_app + '/**/' + config_name
         for config_file in glob.glob(to_search, recursive=True):
-            make_replacements(dbhost_rep)
-            make_replacements(dbname_rep)
-            make_replacements(dbuser_rep)
-            make_replacements(dbpass_rep)
+            make_replacements(dbhost_rep, config_file)
+            make_replacements(dbname_rep, config_file)
+            make_replacements(dbuser_rep, config_file)
+            make_replacements(dbpass_rep, config_file)
 
     # Step 2) Run the docker container.
     p = subprocess.Popen([ './run.sh' ], stdout=PIPE, stderr=STDOUT, cwd=cve_dir)
@@ -231,12 +115,12 @@ if __name__ == "__main__":
                   'as a caution!', file=sys.stderr)
 
         checker.join(timeout=exploit_timeout)
-        found_exploit = globals()['received']
+        found_exploit = checker.result
         if checker.is_alive():
             # Eat the request in case we timed out, so this thread can die!
             print('ERROR: Timed-out in the ExploitChecker! Eating the HTTP '
                   'request...', file=sys.stderr)
-            requests.get('http://%s:%s' % (addr, port))
+            requests.get('http://%s:%s' % (http_server_addr, http_server_port))
             checker.join()
     else:
         print('ERROR: Docker did not initialize!', file=sys.stderr)
