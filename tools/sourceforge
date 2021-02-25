@@ -37,17 +37,17 @@ import selectors
 import shutil
 import urllib.parse
 
+from bs4 import BeautifulSoup
 from datetime import datetime
 from enum import IntEnum
-from bs4 import BeautifulSoup
-from packaging import version
 from fuzzywuzzy import fuzz
-
 from helpers.file_utils import without_ext
 from helpers.process_utils import run_cmd
 from helpers.string_utils import border
 from helpers.zip_utils import extract_archive, is_supported_archive_type, \
                               list_archive_contents
+from impl.exploit_runner import run_exploit
+from packaging import version
 
 class Op(IntEnum):
     LE = 1
@@ -402,14 +402,13 @@ def download_version(url, vuln_files, cve, cpe, is_file):
             if not run_cmd(cmd, 'comfortfuzz'):
                 continue
 
-            # Run the exploit end-to-end
             webapp_path = os.path.join(os.path.join(cve_dir, new_cve_dir),
                     os.path.join('data', common_root))
-            cmd = [os.path.join(haccs_cmd_dir, 'tools/run_end_to_end'),
-                    cve, webapp_path]
-            if not run_cmd(cmd, 'exploit end-to-end'):
-                print('WARNING: Exploit not exercised!')
-                continue
+            # Run the exploit end-to-end
+            if run_exploit(cve, webapp_path):
+                print('SUCCESS: exploit was exercised!')
+            else:
+                print('FAILURE: exploit was not exercised!')
 
             value = input("Continue scraping? (y/N)... ")
             if value.lower() != 'y':
