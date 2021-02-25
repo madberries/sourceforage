@@ -19,6 +19,7 @@ from subprocess import DEVNULL, PIPE, STDOUT
 from tempfile import mkstemp
 from threading import Thread
 
+from helpers.utils import run_cmd
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 # "Constants"
@@ -222,7 +223,12 @@ if __name__ == "__main__":
         cmd = ['docker', 'run', '--volume', exploits_dir + ':/exploits',
                 '--volume', json_out_dir + ':/json_out', '--rm', '-it',
                 'comfortfuzz', './run_exploit', cve_base]
-        subprocess.run(cmd) # wait for proc!
+        if not run_cmd(cmd, 'generated exploited', timeout=30):
+            # Only print a warning, since the exploit could have perceivably
+            # worked and still had returned a non-zero exit code (I would only
+            # suppose, since I haven't looked at comfortfuzz).
+            print('WARNING: comfortfuzz returned a non-zero exit status, '
+                  'as a caution!', file=sys.stderr)
 
         checker.join(timeout=exploit_timeout)
         found_exploit = globals()['received']
