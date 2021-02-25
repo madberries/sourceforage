@@ -73,3 +73,9 @@ def strip_ansi_color(data):
 def border(s):
     x = '*' * (len(s)+4)
     return '%s\n* %s *\n%s' % (x, s, x)
+
+def contains_substr(s, substr):
+    try:
+        return s.lower().index(substr.lower())
+    except ValueError:
+        return -1
