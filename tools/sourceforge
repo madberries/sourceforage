@@ -1,4 +1,18 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
+#
+# usage: sourceforge [-h] [-v] infiles [infiles ...]
+#
+# Discovers and generates PHPexploits automatically (via sourceforge) from NVD
+# json data feed
+#
+# positional arguments:
+#   infiles         Compressed json file as downloaded from NVD's website, e.g.
+#                   https://nvd.nist.gov/feeds/json/cve/1.0/nvdcve-1.0-2018.json
+#                   .gz
+#
+# optional arguments:
+#   -h, --help      show this help message and exit
+#   -v, --verified  Run only CVEs that have been verified to work end-to-end
 
 import os
 import sys
@@ -474,27 +488,19 @@ def download_version(url, vuln_files, cve, cpe, is_file):
                     timeout=gaaphp_timeout, cwd=cve_dir):
                 continue
 
-            # Remove old copy of CVE docker
-            cmd = ['ssh', '-p', '5679', 'haccs@127.0.0.1', 'rm', '-rf', new_cve_dir]
-            if not run_cmd(cmd, 'remote rm of old CVE docker'):
-                continue
-
-            # Copy over CVE to VM
-            cmd = ['scp', '-P', '5679', '-r', '-p', new_cve_dir, 'haccs@127.0.0.1:/home/haccs']
-            if not run_cmd(cmd, 'remote copy CVE docker to VM', cwd=cve_dir):
-                continue
-
-            # Run comfortfuzz on JSON output
-            cmd = ['ssh', '-t', '-p', '5679', 'haccs@127.0.0.1', '/home/haccs/run_cfuzz.sh',
-                    new_cve_dir]
+            exploits_dir = os.path.join(haccs_cmd_dir, 'comfortfuzz/exploits')
+            json_out_dir = os.path.join(haccs_cmd_dir, 'comfortfuzz/json_out')
+            cmd = ['docker', 'run', '--volume', exploits_dir + ':/exploits',
+                    '--volume', json_out_dir + ':/json_out', '--rm', '-it',
+                    'comfortfuzz', './run_comfuzz', new_cve_dir]
             if not run_cmd(cmd, 'comfortfuzz'):
                 continue
 
             # Run the exploit end-to-end
-            webapp_path = os.path.join(os.path.join('/home/haccs', new_cve_dir),
+            webapp_path = os.path.join(os.path.join(cve_dir, new_cve_dir),
                     os.path.join('data', common_root))
-            cmd = ['ssh', '-t', '-p', '5679', 'haccs@127.0.0.1',
-                    '/home/haccs/run_end_to_end', webapp_path]
+            cmd = [os.path.join(haccs_cmd_dir, 'tools/run_end_to_end'),
+                    cve, webapp_path]
             if not run_cmd(cmd, 'exploit end-to-end'):
                 print('WARNING: Exploit not exercised!')
                 continue
@@ -690,7 +696,8 @@ def parse_args():
     """
     parse command line arguments
     """
-    parser = argparse.ArgumentParser(description="Parses NVD json data feed")
+    parser = argparse.ArgumentParser(description='Discovers and generates PHP'
+            'exploits automatically (via sourceforge) from NVD json data feed')
     parser.add_argument('infiles', nargs="+",
             help="Compressed json file as downloaded from NVD's website, e.g. "
             "https://nvd.nist.gov/feeds/json/cve/1.0/nvdcve-1.0-2018.json.gz")

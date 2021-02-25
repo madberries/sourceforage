@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
@@ -25,17 +26,17 @@ import picocli.CommandLine.Parameters;
     mixinStandardHelpOptions = true
 )
 public class RunEndToEnd extends BaseCmd {
-    
+
     private static final int PORT = 5679;
     private static final String IP = "127.0.0.1";
     private static final String USER = "haccs";
-    
+
     @Option(names = {"--cve-dir"},
             description = "The path (directory) to the CVE docker image",
             paramLabel = "cve-directory",
             required = true)
     private File cveDir;
-    
+
     @Parameters(paramLabel = "<gaaphp-arg>", description = "Optional arguments to pass to gaaphp")
     private String[] gaaphpArgs = {};
 
@@ -144,9 +145,16 @@ public class RunEndToEnd extends BaseCmd {
 
         // Send over json output, run comfortfuzz, and build exploit.
         String fullAddr = String.format("%s@%s", USER, IP);
-        runCmd("ssh -p %s %s rm -rf /home/%s/output-egen.json", 5, Integer.toString(PORT), fullAddr, USER);
-        runCmd("scp -P %s %s/output-egen.json %s:/home/%s/comfortfuzz/experiments/command_injection/egen-%s.json", 5,
-               Integer.toString(PORT), gaaphpDir.getPath(), fullAddr, USER, cveDir.getName());
+
+        /*
+         *  TODO: Remove hardcoded path, but I'll leave it for now since this code is
+         *        probably going to go away at some point
+         */
+        File toDir = new File("/home/jeikenberry/Projects/java/haccscmd/comfortfuzz/json_out");
+        Files.copy(new File(gaaphpDir, "output-egen.json").toPath(),
+                   new File(toDir, String.format("egen-%s.json", cveDir.getName())).toPath(),
+                   StandardCopyOption.REPLACE_EXISTING);
+
         //runCmd("ssh -t -p %s %s /home/%s/run_cfuzz.sh %s", 0, true, Integer.toString(PORT), fullAddr, USER, cve.toLowerCase());
 
         // run flask server thread
@@ -190,7 +198,6 @@ public class RunEndToEnd extends BaseCmd {
         System.out.printf("Running command '%s'...\n", cmd);
         Process p = rt.exec(cmd);
         if (printOut) {
-            System.out.println("printing to stdout!!");
             StreamGobbler errorGobbler = new StreamGobbler(p.getErrorStream(), "ERROR");
 
             // any output?
@@ -235,7 +242,7 @@ public class RunEndToEnd extends BaseCmd {
 
         return outputGobbler.getOutput().trim();
     }
-    
+
     private int runCmdInDir(File dir, long timeoutInSecs, boolean printOut, String... cmd)
             throws IOException, InterruptedException {
         ProcessBuilder pb = new ProcessBuilder(cmd);
@@ -248,7 +255,6 @@ public class RunEndToEnd extends BaseCmd {
         pb.directory(dir);
         Process p = pb.start();
         if (printOut) {
-            System.out.println("printing to stdout!!");
             StreamGobbler errorGobbler = new StreamGobbler(p.getErrorStream(), "ERROR");
 
             // any output?
@@ -308,7 +314,7 @@ public class RunEndToEnd extends BaseCmd {
         }
         return result;
     }
-    
+
     @Override
     public Integer call() throws Exception {
         int result = super.call();
@@ -321,13 +327,13 @@ public class RunEndToEnd extends BaseCmd {
         if (!cveDir.isDirectory()) {
             throw new RuntimeException("specified path is not a directory: " + cveDir);
         }
-        
+
         File propFile = getFileOrError(cveDir, ".cve.properties");
         Properties props = new Properties();
         try (FileInputStream in = new FileInputStream(propFile)) {
             props.load(in);
         }
-        
+
         File dataDir = new File(cveDir, "data");
         String vulnFilePath = getProperty(props, "vuln.file");
 
@@ -348,7 +354,7 @@ public class RunEndToEnd extends BaseCmd {
         codebaseDir = getDirOrError(dataDir, codebaseDir.getPath());
 
         run();
-        
+
         return 0;
     }
 

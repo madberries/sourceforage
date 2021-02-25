@@ -1,24 +1,28 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 #
-# USAGE: run_end_to_end <path-to-webapp>
+# USAGE: run_end_to_end <cve> <path-to-webapp>
+#
 # EXIT_CODE: 0 if exploit was excersid, otherwise 1.
 
-import itertools
 import glob
+import itertools
 import os
 import re
-import subprocess
 import requests
 import shutil
+import subprocess
 import sys
 import time
 
 from bs4 import BeautifulSoup
-from subprocess import STDOUT, PIPE
+from subprocess import DEVNULL, PIPE, STDOUT
 from tempfile import mkstemp
 from threading import Thread
 
+from http.server import HTTPServer, BaseHTTPRequestHandler
+
 # "Constants"
+haccs_cmd_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 possible_config_names = [ 'common.php', 'config.php' ]
 dbhost = 'localhost'
 dbname = 'somedb'
@@ -28,6 +32,9 @@ dbhost_rep = [['dbhost', 'hostname'], [dbhost]]
 dbname_rep = [['dbname', 'default_db'], [dbname]]
 dbuser_rep = [['dbuser', 'dbusername'], [dbuser]]
 dbpass_rep = [['dbpass', 'dbpassword'], [dbpass]]
+addr = '172.17.0.1'
+port = 5000
+exploit_timeout = 30
 
 def sed0(fin, fout, pattern, replace, count):
     num_replaced = count
@@ -60,7 +67,8 @@ def sed(pattern, replace, source, dest=None, count=0):
         replace (str): replacement str
         source  (str): input filename
         count (int): number of occurrences to replace
-        dest (str):   destination filename, if not given, source will be over written.
+        dest (str): destination filename, if not given, source will
+                    be over written.
     """
 
     success = False
@@ -94,37 +102,62 @@ def strip_ansi_color(data):
 
     return re.sub(invisible_codes, "", data)
 
+def stop_docker(container_id, image_name):
+    print('Stopping docker container (%s) for image \'%s\'... ' %
+            (container_id, image_name), end='')
+    subprocess.run(['docker', 'stop', container_id], stdout=DEVNULL)
+    print('DONE!')
+
+def get_running_dockers(name=None):
+    running_dockers = []
+    if name is None:
+        out, _ = subprocess.Popen(['docker', 'container', 'ls'],
+                stdout=PIPE).communicate()
+    else:
+        out, _ = subprocess.Popen(['docker', 'container', 'ls',
+            '-f', 'ancestor=' + name], stdout=PIPE).communicate()
+    out = out.splitlines()[1:]  # grab only the relevant lines
+    for line in out:
+        split_line = line.decode('utf-8').split()
+        running_dockers.append(split_line[0])
+    return running_dockers
+
+class HTTPHandler(BaseHTTPRequestHandler):
+    def do_HEAD(self):
+        self.send_response(200)
+        self.send_header("Content-type", "text/html")
+        self.end_headers()
+
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-type", "text/x-shellscript")
+        self.end_headers()
+        self.wfile.write(bytes('#!/bin/sh\n\ntouch /tmp/TESTFILE\n\n', 'utf-8'))
+        globals()['received'] = True
+
 class ExploitChecker(Thread):
 
     def __init__(self):
         Thread.__init__(self)
-        self.result = False   # Did we find the exploit?
+        self.server = HTTPServer((addr, port), HTTPHandler)
         self.start()
 
     def run(self):
-        print('Reading from fifo')
-        print('-' * 80)
-        with open('/home/haccs/fifo') as fifo:
-            output = strip_ansi_color(fifo.read())
-            print(output)
-            try:
-                if output.index('"GET /static/cmd.sh HTTP/1.1" 200 -') > 0:
-                    self.result = True
-            except ValueError:
-                pass
-        print('-' * 80)
-        print('Done reading from fifo')
+        print('Started http server on %s:%d' % (addr, port))
+        self.server.handle_request()   # just handle one request
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print('USAGE: %s <path-to-webapp>' % sys.argv[0], file=sys.stderr)
+    globals()['received'] = False
+    if len(sys.argv) != 3:
+        print('USAGE: %s <cve> <path-to-webapp>' % sys.argv[0], file=sys.stderr)
         exit(1)
 
     # Extract CVE directory from application path.
-    path_to_app = sys.argv[1]
+    cve = sys.argv[1]
+    path_to_app = sys.argv[2]
     cve_dir = os.path.dirname(os.path.dirname(path_to_app))
     if cve_dir == '':
-        print('ERROR: Unable to locate cve directory relative to: '
+        print('ERROR: Unable to locate CVE directory relative to: '
                 + path_to_app, file=sys.stderr)
 
     # Step 1) Find a configuration file, and check for hardcoded database
@@ -183,40 +216,30 @@ if __name__ == "__main__":
         # Wait for the exploit to trigger by reading from the fifo that the
         # flask server will be writing to.
         checker = ExploitChecker()
-        cve = os.path.basename(cve_dir)
-        subprocess.run([ '/home/haccs/run_exploit.sh', cve ])  # wait for proc!
+        cve_base = os.path.basename(cve_dir)
+        exploits_dir = os.path.join(haccs_cmd_dir, 'comfortfuzz/exploits')
+        json_out_dir = os.path.join(haccs_cmd_dir, 'comfortfuzz/json_out')
+        cmd = ['docker', 'run', '--volume', exploits_dir + ':/exploits',
+                '--volume', json_out_dir + ':/json_out', '--rm', '-it',
+                'comfortfuzz', './run_exploit', cve_base]
+        subprocess.run(cmd) # wait for proc!
 
-        # TODO: Before we kill the process, we should probably add a lock here
-        # to ensure that we have connected and read from the stream in the
-        # ExploitChecker thread.
-
-        # Kill flask so that the underlying buffer of ExploitChecker can flush.
-        # Once flushed, ExploitChecker will check the output to see if the
-        # exploit was exercised.
-        alive = True
-        attempts = 5   # Only attempt 5 times
-        while alive and attempts > 0:
-            pkill = subprocess.run([ 'pkill' , '-f', 'flask' ])
-            alive = pkill.returncode != 0
-            time.sleep(0.5)
-
-        # Check to see that we were able to kill the process, and if not then
-        # error out.
-        if alive:
-            print('ERROR: Unable to kill flask process!', file=sys.stderr)
-            exit(1)
-
-        # Ok, now let's just wait for the result of the exploit
-        checker.join()
-        found_exploit = checker.result
+        checker.join(timeout=exploit_timeout)
+        found_exploit = globals()['received']
+        if checker.is_alive():
+            # Eat the request in case we timed out, so this thread can die!
+            print('ERROR: Timed-out in the ExploitChecker! Eating the HTTP '
+                  'request...', file=sys.stderr)
+            requests.get('http://%s:%s' % (addr, port))
+            checker.join()
     else:
         print('ERROR: Docker did not initialize!', file=sys.stderr)
 
     # TODO: Since this is process cleanup, we should put this in a trap.
     # Stop the docker container, and wait for it to die
-    subprocess.run(['/home/haccs/scripts/docker-stop'])
-    print('Waiting for docker container to die!')
-    p.wait()
+    image_name = 'aarno-' + cve.lower()
+    for docker in get_running_dockers(name=image_name):
+        stop_docker(docker, image_name)
 
     # Did we exercise the exploit?
     if found_exploit:

@@ -1,0 +1,103 @@
+#!/bin/bash
+#
+# USAGE: run_cfuzz <cve-number>
+
+source $COMFORT_FUZZ_HOME/comfort-env/bin/activate
+
+if [[ $# != 1 ]]; then
+  echo "USAGE: run_cfuzz <cve-number>" 1>&2
+  exit 1
+fi
+
+check_mountpt() {
+  mount_dir=$1
+  if [[ ! -d "$mount_dir" ]]; then
+    echo "ERROR: $mount_dir is not mounted!" 1>&2
+    exit 1
+  fi
+}
+check_mountpt /json_out
+check_mountpt /exploits
+
+cve="$1"
+json="/json_out/egen-$cve.json"
+
+if [[ ! -f "$json" ]]; then
+  echo "ERROR: json file does not exist: $json" 1>&2
+  exit 1
+fi
+
+# Remove old payloads
+rm -rf /tmp/payload_php_*
+if [[ $? != 0 ]]; then
+  echo "ERROR: unable to remove previous payloads!" 1>&2
+  exit 1
+fi
+
+pushd "$HOME/comfortfuzz"
+pushd experiments/command_injection
+./generate_php_program.py -L DEBUG $json
+exit_code=$?
+if [[ $exit_code != 0 ]]; then
+  popd ; popd
+  exit $exit_code
+fi
+
+num_of_exploits=$(ls -d /tmp/payload_php_* | wc -l)
+if [[ $num_of_exploits == 0 ]]; then
+  echo "ERROR: no exploits found!" 1>&2
+  popd ; popd
+  exit 1
+fi
+
+# I'm not going to handle more exploits than letters of the
+# alphabet (that's just CRAZY talk!)
+if [ $num_of_exploits -gt 26 ]; then
+  echo "ERROR: too many exploits ($num_of_exploits exploits)!" 1>&2
+  popd ; popd
+  exit 1
+fi
+
+rm -rf /exploits/${cve}*
+
+build_exploit() {
+  exploit_dir=$1
+  pushd $exploit_dir
+  cmake .
+  if [[ $? != 0 ]]; then
+    echo "ERROR: failed to run cmake" 1>&2
+    popd
+    return 1
+  fi
+  make
+  if [[ $? != 0 ]]; then
+    echo "ERROR: failed to run make" 1>&2
+    popd
+    return 1
+  fi
+  popd
+  return 0
+}
+
+# Build all of the exploits that were generated
+if [[ $num_of_exploits == 1 ]]; then
+  mv /tmp/payload_php_* /exploits/$cve
+  build_exploit /exploits/$cve
+  exit_code=$?
+else
+  i=97
+  for exploit in $(ls -d /tmp/payload_php_*)
+  do
+    char_val=$(printf "\x$(printf %x $i)");
+    exploit_dir="/exploits/${cve}${char_val}"
+    mv $exploit $exploit_dir
+    build_exploit $exploit_dir
+    exit_code=$?
+    if [[ $exit_code != 0 ]]; then
+      popd ; popd
+      exit $exit_code
+    fi
+    ((i++))
+  done
+fi
+popd ; popd
