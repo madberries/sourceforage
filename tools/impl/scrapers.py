@@ -9,53 +9,16 @@ import urllib.parse
 from bs4 import BeautifulSoup
 from datetime import datetime
 from fuzzywuzzy import fuzz
-from helpers.file_utils import get_filename_from_download_url, without_ext
-from helpers.process_utils import run_cmd
-from helpers.string_utils import border, contains_substr
-from helpers.zip_utils import extract_archive, is_supported_archive_type, \
-                              list_archive_contents
 
 from .exploit_runner import run_exploit
 from .versions import Version, InvalidVersionFormat, compute_version_range
-
-# "Constants"
-haccs_cmd_dir = os.path.dirname(
-    os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
-)
-haccs_cmd = os.path.join(haccs_cmd_dir, './build/install/haccscmd/bin/haccscmd')
-haccs_cmd = os.path.realpath(haccs_cmd)
-sforge_dir              = 'sourceforge'
-default_haccsvm_user    = 'haccs'
-default_haccsvm_host    = '127.0.0.1'
-gaaphp_timeout          = 30   # 30 second timeout
-capable_of_working      = {
-        # Format = CVE: (new(True)/old(False), register_globals, sqlarity)
-        "cve-2005-2466": (False, True, False),
-        "cve-2006-0074": (False, False, True),
-        "cve-2006-0079": (False, True, False),
-        "cve-2006-0135": (False, False, False),
-        "cve-2006-1271": (False, False, False),
-        "cve-2006-1481": (False, False, False),
-        "cve-2006-7088": (True, False, True),
-        "cve-2007-3534": (False, True, False),
-        "cve-2008-0154": (False, False, True),
-        "cve-2008-0159": (True, False, False),
-        "cve-2008-0424": (True, False, True),
-        "cve-2008-0677": (True, False, True),
-        "cve-2008-4092": (False, True, False),
-        "cve-2008-6081": (True, False, True),
-        "cve-2008-6142": (True, False, False),
-        "cve-2009-0881": (False, False, False),
-        "cve-2009-1500": (True, False, False),
-        "cve-2009-1814": (False, False, True),
-        "cve-2009-2036": (False, True, False),
-        "cve-2009-2096": (False, False, False),
-        "cve-2010-1538": (True, False, False),
-        "cve-2010-4876": (True, False, False),
-        "cve-2010-4935": (True, False, False),
-        "cve-2014-9440": (True, False, True),
-        "cve-2015-1372": (True, False, False),
-}
+from .helpers.constants import CAPABLE_OF_WORKING, GAAPHP_TIMEOUT, HACCS_CMD, \
+                               HACCSCMD_ROOT_DIR, SOURCEFORGE_DIR
+from .helpers.file_utils import get_filename_from_download_url, without_ext
+from .helpers.process_utils import run_cmd
+from .helpers.string_utils import border, contains_substr
+from .helpers.zip_utils import extract_archive, is_supported_archive_type, \
+                               list_archive_contents
 
 class SourceforgeScraper:
     def __init__(self, cve, check_only_verified=False):
@@ -217,7 +180,7 @@ class SourceforgeScraper:
 
             # Make the CVE directory
             common_root = os.path.commonpath(contents_list)
-            cve_dir = os.path.join(sforge_dir, self.uniq_cve_dirname())
+            cve_dir = os.path.join(SOURCEFORGE_DIR, self.uniq_cve_dirname())
             os.mkdir(cve_dir)
 
             # Find the common root, since we make need to create another
@@ -248,7 +211,7 @@ class SourceforgeScraper:
 
                 # If we are only checking verifiable CVEs, then we only need to
                 # run this for the working configuration.
-                if self.check_only_verified and capable_of_working[cve_lower] \
+                if self.check_only_verified and CAPABLE_OF_WORKING[cve_lower] \
                         != (new_template, reg_globals, sqlarity):
                     continue
 
@@ -261,9 +224,9 @@ class SourceforgeScraper:
                 if reg_globals or not new_template:
                     # Register globals requires the old template, since this
                     # option was removed in later versions of mysql
-                    cmd = [haccs_cmd, 'dockerize', '--old', common_root]
+                    cmd = [HACCS_CMD, 'dockerize', '--old', common_root]
                 else:
-                    cmd = [haccs_cmd, 'dockerize', common_root]
+                    cmd = [HACCS_CMD, 'dockerize', common_root]
                 if not run_cmd(cmd, 'dockerize cmd', cwd=cve_dir):
                     continue
 
@@ -283,14 +246,14 @@ class SourceforgeScraper:
 
                 # Run gaaphp and copy over JSON output to VM (timeout if it
                 # takes longer than 30 seconds)
-                cmd = [haccs_cmd, 'run', '--cve-dir', new_cve_dir]
+                cmd = [HACCS_CMD, 'run', '--cve-dir', new_cve_dir]
                 if not run_cmd(cmd, 'gaaphp/comfortfuzz end-to-end',
-                        timeout=gaaphp_timeout, cwd=cve_dir):
+                        timeout=GAAPHP_TIMEOUT, cwd=cve_dir):
                     continue
 
-                exploits_dir = os.path.join(haccs_cmd_dir,
+                exploits_dir = os.path.join(HACCSCMD_ROOT_DIR,
                                             'comfortfuzz/exploits')
-                json_out_dir = os.path.join(haccs_cmd_dir,
+                json_out_dir = os.path.join(HACCSCMD_ROOT_DIR,
                                             'comfortfuzz/json_out')
                 cmd = ['docker', 'run', '--volume', exploits_dir + ':/exploits',
                         '--volume', json_out_dir + ':/json_out', '--rm', '-it',

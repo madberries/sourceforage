@@ -1,9 +1,10 @@
 import os
 
-from .zip_utils import UnsupportedArchive, supported_exts
+from .constants import SUPPORTED_EXTS
+from .zip_utils import UnsupportedArchive
 
 def without_ext(filename):
-    for ext in supported_exts:
+    for ext in SUPPORTED_EXTS:
         try:
             idx = filename.rindex(ext)
             return filename[:idx]

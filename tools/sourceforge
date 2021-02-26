@@ -32,7 +32,8 @@ import gzip
 import json
 import shutil
 
-from impl.scrapers import SourceforgeScraper, sforge_dir, capable_of_working
+from impl.scrapers import SourceforgeScraper
+from impl.helpers.constants import CAPABLE_OF_WORKING, SOURCEFORGE_DIR
 
 def main(cmd_line):
     # Parse through all NVD files specified on the command line:
@@ -50,13 +51,13 @@ def main(cmd_line):
                 nvd_inputs.append (input)
 
     # Start from a fresh sourceforge directory
-    if os.path.exists(sforge_dir):
-        if not os.path.isdir(sforge_dir):
+    if os.path.exists(SOURCEFORGE_DIR):
+        if not os.path.isdir(SOURCEFORGE_DIR):
             print('ERROR: \'%s\' already exists, and is not a directory'
-                    % sforge_dir, file=sys.stderr)
+                    % SOURCEFORGE_DIR, file=sys.stderr)
             exit(1)
-        shutil.rmtree(sforge_dir)
-    os.mkdir(sforge_dir)
+        shutil.rmtree(SOURCEFORGE_DIR)
+    os.mkdir(SOURCEFORGE_DIR)
 
     # For each json file, parse the CVE items and determine whther this is a
     # queriable SQL injection.
@@ -71,7 +72,7 @@ def main(cmd_line):
             # end-to-end, and this CVE is not one that has been verified
             # to work, then skip this CVE.
             if cmd_line.verified and not cve.cve.lower() in \
-                    capable_of_working.keys():
+                    CAPABLE_OF_WORKING.keys():
                 continue
 
             # Make sure CPE information was found, so we can pull the version

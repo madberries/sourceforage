@@ -3,13 +3,13 @@ import tarfile
 from io import BytesIO
 from zipfile import ZipFile
 
-supported_exts = [ '.zip', '.tar.gz', '.tgz', '.tar.bz2' ]
+from .constants import SUPPORTED_EXTS
 
 class UnsupportedArchive(Exception):
     pass
 
 def is_supported_archive_type(filename):
-    for ext in supported_exts:
+    for ext in SUPPORTED_EXTS:
         if filename.endswith(ext):
             return True
     return False
