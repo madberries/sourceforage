@@ -78,18 +78,3 @@ HTTP_SERVER_PORT = 5000
 #
 # TODO: We might want to consider supporting additional ones (like rar and 7z)
 SUPPORTED_EXTS = [ '.zip', '.tar.gz', '.tgz', '.tar.bz2' ]
-
-# Message that is printed upon a successful end-to-end exploit
-SUCCESS_MSG = "                _ ._  _ , _ ._              \n" \
-              "              (_ ' ( `  )_  .__)            \n" \
-              "            ( (  (    )   `)  ) _)          \n" \
-              "           (__ (_   (_ . _) _) ,__)         \n" \
-              "               `~~`\ ' . /`~~`              \n" \
-              "               ,::: ;   ; :::,              \n" \
-              "              ':::::::::::::::'             \n" \
-              " _________jgs______/_ __ \_________________ \n" \
-              "|                                          |\n" \
-              "|                SUCCESS!!                 |\n" \
-              "| ---------------------------------------- |\n" \
-              "| ALL OF YOUR DATABASE ARE BELONG TO US!!! |\n" \
-              "|__________________________________________|\n"

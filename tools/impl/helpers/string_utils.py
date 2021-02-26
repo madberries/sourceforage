@@ -60,16 +60,6 @@ def make_replacements(replacement_list, config_file):
                 r'\1' + value + r'\3', config_file, count=1):
             break
 
-def strip_ansi_color(data):
-    """Remove ANSI colors from string or bytes."""
-    if isinstance(data, bytes):
-        data = data.decode("utf-8")
-
-    # Taken from tabulate
-    invisible_codes = re.compile(r"\x1b\[\d*m")
-
-    return re.sub(invisible_codes, "", data)
-
 def border(s):
     x = '*' * (len(s)+4)
     return '%s\n* %s *\n%s' % (x, s, x)

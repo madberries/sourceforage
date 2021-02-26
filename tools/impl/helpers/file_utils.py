@@ -32,6 +32,10 @@ def root_of_relpath(relpath):
         relpath = os.path.dirname(relpath)
     return last
 
+def read_all_lines(filename):
+    with open(filename) as f:
+        return ''.join(f.readlines())
+
 def replace_lines(filename, line_nos, to_replace):
     if len(line_nos) != len(to_replace):
         raise ValueError

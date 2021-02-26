@@ -16,7 +16,7 @@ from .dockerizer import dockerize
 from .exploit_runner import run_exploit
 from .versions import Version, InvalidVersionFormat, compute_version_range
 from .helpers.constants import CAPABLE_OF_WORKING, HACCSCMD_ROOT_DIR, \
-                               SOURCEFORGE_DIR, SUCCESS_MSG
+                               SOURCEFORGE_DIR
 from .helpers.file_utils import get_filename_from_download_url, without_ext
 from .helpers.process_utils import run_cmd
 from .helpers.string_utils import border, contains_substr
@@ -24,9 +24,10 @@ from .helpers.zip_utils import extract_archive, is_supported_archive_type, \
                                list_archive_contents
 
 class SourceforgeScraper:
-    def __init__(self, cve, check_only_verified=False):
+    def __init__(self, cve, check_only_verified=False, success_msg='Exploit succeeded!'):
         self.cve = cve
         self.check_only_verified = check_only_verified
+        self.success_msg = success_msg
         self.vuln_files = set()
         for word in cve.description.split(' '):
             if word.endswith('.php'):
@@ -269,7 +270,7 @@ class SourceforgeScraper:
                         os.path.join('data', common_root))
                 # Run the exploit end-to-end.
                 if run_exploit(cve_lower, webapp_path):
-                    print(SUCCESS_MSG)
+                    print(self.success_msg)
                 else:
                     print('***FAILURE: exploit was not exercised!***')
 
