@@ -16,7 +16,7 @@ from .dockerizer import dockerize
 from .exploit_runner import run_exploit
 from .versions import Version, InvalidVersionFormat, compute_version_range
 from .helpers.constants import CAPABLE_OF_WORKING, HACCSCMD_ROOT_DIR, \
-                               SOURCEFORGE_DIR
+                               SOURCEFORGE_DIR, SUCCESS_MSG
 from .helpers.file_utils import get_filename_from_download_url, without_ext
 from .helpers.process_utils import run_cmd
 from .helpers.string_utils import border, contains_substr
@@ -269,9 +269,9 @@ class SourceforgeScraper:
                         os.path.join('data', common_root))
                 # Run the exploit end-to-end.
                 if run_exploit(cve_lower, webapp_path):
-                    print('SUCCESS: exploit was exercised!')
+                    print(SUCCESS_MSG)
                 else:
-                    print('FAILURE: exploit was not exercised!')
+                    print('***FAILURE: exploit was not exercised!***')
 
                 value = input("Continue scraping? (y/N)... ")
                 if value.lower() != 'y':
