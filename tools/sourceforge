@@ -2,7 +2,7 @@
 #
 # usage: sourceforge [-h] [-v] infiles [infiles ...]
 #
-# Discovers and generates PHPexploits automatically (via sourceforge) from NVD
+# Discovers and generates PHP exploits automatically (via sourceforge) from NVD
 # json data feed
 #
 # positional arguments:
@@ -18,7 +18,7 @@ import os
 import sys
 
 # Make sure that the HACCSTA2_HOME env var is set, since we need to add this to
-# our python path
+# our python path.
 haccs_ta2_home = os.environ.get('HACCSTA2_HOME')
 if haccs_ta2_home is None:
     print('ERROR: HACCSTA2_HOME is not set (this should point to the root of '
@@ -31,6 +31,7 @@ import argparse
 import gzip
 import json
 import shutil
+import signal
 
 from impl.scrapers import SourceforgeScraper
 from impl.helpers.constants import CAPABLE_OF_WORKING, SOURCEFORGE_DIR
@@ -49,6 +50,9 @@ def main(cmd_line):
                 input = (json.load(f))
                 input['filename'] = infile
                 nvd_inputs.append (input)
+
+    # Block all signals for now, but may decide to include SIGINT at some point.
+    signal.pthread_sigmask(signal.SIG_BLOCK, signal.valid_signals())
 
     # Start from a fresh sourceforge directory
     if os.path.exists(SOURCEFORGE_DIR):
@@ -76,7 +80,7 @@ def main(cmd_line):
                 continue
 
             # Make sure CPE information was found, so we can pull the version
-            # number easily from this
+            # number easily from this.
             if len(cve.cpe_list_flat) <= 0:
                 continue
 
@@ -89,7 +93,7 @@ def parse_args():
     """
     parse command line arguments
     """
-    parser = argparse.ArgumentParser(description='Discovers and generates PHP'
+    parser = argparse.ArgumentParser(description='Discovers and generates PHP '
             'exploits automatically (via sourceforge) from NVD json data feed')
     parser.add_argument('infiles', nargs="+",
             help="Compressed json file as downloaded from NVD's website, e.g. "
