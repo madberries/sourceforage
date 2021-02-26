@@ -4,16 +4,19 @@ import re
 import requests
 import selectors
 import shutil
+import sys
 import urllib.parse
 
 from bs4 import BeautifulSoup
 from datetime import datetime
 from fuzzywuzzy import fuzz
 
+from .analysis import run_gaaphp
+from .dockerizer import dockerize
 from .exploit_runner import run_exploit
 from .versions import Version, InvalidVersionFormat, compute_version_range
-from .helpers.constants import CAPABLE_OF_WORKING, GAAPHP_TIMEOUT, HACCS_CMD, \
-                               HACCSCMD_ROOT_DIR, SOURCEFORGE_DIR
+from .helpers.constants import CAPABLE_OF_WORKING, HACCSCMD_ROOT_DIR, \
+                               SOURCEFORGE_DIR
 from .helpers.file_utils import get_filename_from_download_url, without_ext
 from .helpers.process_utils import run_cmd
 from .helpers.string_utils import border, contains_substr
@@ -38,18 +41,22 @@ class SourceforgeScraper:
         self.cur_idx = self.cur_idx + 1
         return cur_dirname
 
-    def generate_cve_props_file(self, cve_dir, cpe, vuln_file, **kwargs):
+    def generate_ini_file(self, cve_dir, cpe, vuln_file, **kwargs):
         cpe_split = cpe.split(':')
-        with open(os.path.join(cve_dir, '.cve.properties'), 'w') as \
-                cve_props_file:
-            print('cve=' + self.cve.cve, file=cve_props_file)
-            print('cpe.product=' + cpe, file=cve_props_file)
-            print('version=' + cpe_split[5], file=cve_props_file)
-            print('vuln.file=' + vuln_file, file=cve_props_file)
-            print('register.globals=' + str(kwargs['reg_globals']).lower(),
-                    file=cve_props_file)
-            print('sqlarity=' + str(kwargs['sqlarity']).lower(),
-                    file=cve_props_file)
+        with open(os.path.join(cve_dir, '.cve.ini'), 'w') as cve_ini_file:
+            version = cpe_split[5]
+            reg_globals = str(kwargs['reg_globals'])
+            sqlarity = str(kwargs['sqlarity'])
+            print('[cve]\n'               \
+                  'id=%s\n'               \
+                  'cpe=%s\n'              \
+                  'version=%s\n'          \
+                  'vuln_file=%s\n'        \
+                  '\n'                    \
+                  '[analysis]\n'          \
+                  'register_globals=%s\n' \
+                  'sqlarity=%s' % (self.cve.cve, cpe, version, vuln_file,
+                      reg_globals, sqlarity), file=cve_ini_file)
 
     @staticmethod
     def search_for_name0(desc, name):
@@ -216,22 +223,20 @@ class SourceforgeScraper:
                     continue
 
                 # Generate the .cve.properties file for this docker.
-                self.generate_cve_props_file(cve_dir, cpe, vuln_file,
-                                             reg_globals=reg_globals,
-                                             sqlarity=sqlarity)
+                self.generate_ini_file(cve_dir, cpe, vuln_file,
+                                       reg_globals=reg_globals,
+                                       sqlarity=sqlarity)
 
-                # Dockerize this codebase
-                if reg_globals or not new_template:
-                    # Register globals requires the old template, since this
-                    # option was removed in later versions of mysql
-                    cmd = [HACCS_CMD, 'dockerize', '--old', common_root]
-                else:
-                    cmd = [HACCS_CMD, 'dockerize', common_root]
-                if not run_cmd(cmd, 'dockerize cmd', cwd=cve_dir):
+                # Dockerize this codebase.
+                use_old_template = reg_globals or not new_template
+                if not dockerize(cve_dir, common_root,
+                                 use_old_template=use_old_template):
+                    print('ERROR: Unable to docker codebase for ' + cve_lower,
+                          file=sys.stderr)
                     continue
 
                 # Move the CVE docker to a new directory so that we don't
-                # overwrite each consecutive run
+                # overwrite each consecutive run.
                 if reg_globals:
                     if sqlarity:
                         new_cve_dir = cve_lower + '_gs'
@@ -244,11 +249,10 @@ class SourceforgeScraper:
                 shutil.move(os.path.join(cve_dir, cve_lower),
                             os.path.join(cve_dir, new_cve_dir))
 
-                # Run gaaphp and copy over JSON output to VM (timeout if it
-                # takes longer than 30 seconds)
-                cmd = [HACCS_CMD, 'run', '--cve-dir', new_cve_dir]
-                if not run_cmd(cmd, 'gaaphp/comfortfuzz end-to-end',
-                        timeout=GAAPHP_TIMEOUT, cwd=cve_dir):
+                # Run gaaphp analysis.
+                if not run_gaaphp(cve_dir, new_cve_dir):
+                    print('ERROR: Unable to analyze codebase for "%s"' %
+                           new_cve_dir, file=sys.stderr)
                     continue
 
                 exploits_dir = os.path.join(HACCSCMD_ROOT_DIR,
@@ -263,7 +267,7 @@ class SourceforgeScraper:
 
                 webapp_path = os.path.join(os.path.join(cve_dir, new_cve_dir),
                         os.path.join('data', common_root))
-                # Run the exploit end-to-end
+                # Run the exploit end-to-end.
                 if run_exploit(cve_lower, webapp_path):
                     print('SUCCESS: exploit was exercised!')
                 else:
