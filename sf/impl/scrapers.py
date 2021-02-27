@@ -15,8 +15,8 @@ from .analysis import run_gaaphp
 from .dockerizer import dockerize
 from .exploit_runner import run_exploit
 from .versions import Version, InvalidVersionFormat, compute_version_range
-from .helpers.constants import CAPABLE_OF_WORKING, HACCSCMD_ROOT_DIR, \
-                               SOURCEFORGE_DIR
+from .helpers.constants import CAPABLE_OF_WORKING, FORAGED_OUT_DIR, \
+                               HACCSCMD_ROOT_DIR
 from .helpers.file_utils import get_filename_from_download_url, without_ext
 from .helpers.process_utils import run_cmd
 from .helpers.string_utils import border, contains_substr
@@ -188,7 +188,7 @@ class SourceforgeScraper:
 
             # Make the CVE directory
             common_root = os.path.commonpath(contents_list)
-            cve_dir = os.path.join(SOURCEFORGE_DIR, self.uniq_cve_dirname())
+            cve_dir = os.path.join(FORAGED_OUT_DIR, self.uniq_cve_dirname())
             os.mkdir(cve_dir)
 
             # Find the common root, since we make need to create another

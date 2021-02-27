@@ -34,7 +34,7 @@ import shutil
 import signal
 
 from impl.scrapers import SourceforgeScraper
-from impl.helpers.constants import CAPABLE_OF_WORKING, SOURCEFORGE_DIR
+from impl.helpers.constants import CAPABLE_OF_WORKING, FORAGED_OUT_DIR
 from impl.helpers.file_utils import read_all_lines
 
 def main(cmd_line):
@@ -55,14 +55,27 @@ def main(cmd_line):
     # Block all signals for now, but may decide to include SIGINT at some point.
     signal.pthread_sigmask(signal.SIG_BLOCK, signal.valid_signals())
 
-    # Start from a fresh sourceforge directory
-    if os.path.exists(SOURCEFORGE_DIR):
-        if not os.path.isdir(SOURCEFORGE_DIR):
-            print('ERROR: \'%s\' already exists, and is not a directory'
-                    % SOURCEFORGE_DIR, file=sys.stderr)
+    # This directory is commit, so it should be there obviously, but just in
+    # case...
+    if not os.path.isdir(FORAGED_OUT_DIR):
+        print('ERROR: \'%s\' does not exist or is not a directory!'
+                % FORAGED_OUT_DIR, file=sys.stderr)
+        exit(1)
+
+    # Start from a fresh output directory for the foraged codebases.
+    for file_or_dir in os.listdir(FORAGED_OUT_DIR):
+        # Don't touch .gitignore, but everything else is fair game!
+        if file_or_dir == '.gitignore':
+            continue
+        full_path = os.path.join(FORAGED_OUT_DIR, file_or_dir)
+        if os.path.isdir(full_path):
+            shutil.rmtree(full_path)
+        elif os.path.isfile(full_path):
+            os.remove(full_path)
+        else:
+            print('ERROR: "%s" is not a file or a directory' % full_path,
+                  file=sys.stderr)
             exit(1)
-        shutil.rmtree(SOURCEFORGE_DIR)
-    os.mkdir(SOURCEFORGE_DIR)
 
     # Message that is printed upon a successful end-to-end exploit
     success_msg = read_all_lines('success.msg')

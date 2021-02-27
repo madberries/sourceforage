@@ -12,7 +12,7 @@ HACCSCMD_ROOT_DIR = os.path.dirname(
 )
 
 # Output directory for downloaded codebases
-SOURCEFORGE_DIR = 'sourceforge'
+FORAGED_OUT_DIR = 'foraged'
 
 # Full (absolute) path to the haccscmd command
 HACCS_CMD = os.path.join(HACCSCMD_ROOT_DIR, './build/install/haccscmd/bin/haccscmd')
