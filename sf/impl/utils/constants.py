@@ -1,7 +1,7 @@
 import os
 
-# The 'haccscmd' root directory
-HACCSCMD_ROOT_DIR = os.path.dirname(
+# The root directory of 'sourceforage'.
+SF_ROOT_DIR = os.path.dirname(
     os.path.dirname(
         os.path.dirname(
             os.path.dirname(
@@ -13,10 +13,6 @@ HACCSCMD_ROOT_DIR = os.path.dirname(
 
 # Output directory for downloaded codebases
 FORAGED_OUT_DIR = 'foraged'
-
-# Full (absolute) path to the haccscmd command
-HACCS_CMD = os.path.join(HACCSCMD_ROOT_DIR, './build/install/haccscmd/bin/haccscmd')
-HACCS_CMD = os.path.realpath(HACCS_CMD)
 
 # Timeouts
 EXPLOIT_TIMEOUT = 30   # The timeout for an exploit to run
@@ -37,6 +33,15 @@ DBHOST_REPLACEMENTS = [['dbhost', 'hostname'], [DBHOST]]
 DBNAME_REPLACEMENTS = [['dbname', 'default_db'], [DBNAME]]
 DBUSER_REPLACEMENTS = [['dbuser', 'dbusername'], [DBUSER]]
 DBPASS_REPLACEMENTS = [['dbpass', 'dbpassword'], [DBPASS]]
+
+# Default HTTP server configuration
+HTTP_SERVER_ADDR = '172.17.0.1'
+HTTP_SERVER_PORT = 5000
+
+# List of supported archive extensions:
+#
+# TODO: We might want to consider supporting additional ones (like rar and 7z)
+SUPPORTED_EXTS = [ '.zip', '.tar.gz', '.tgz', '.tar.bz2' ]
 
 # Dictionary of CVEs capable of working end-to-end (where the mapping is the
 # CVE name to it's working configuration), and of the form:
@@ -69,12 +74,3 @@ CAPABLE_OF_WORKING = {
         "cve-2014-9440": (True, False, True),
         "cve-2015-1372": (True, False, False),
 }
-
-# Default HTTP server configuration
-HTTP_SERVER_ADDR = '172.17.0.1'
-HTTP_SERVER_PORT = 5000
-
-# List of supported archive extensions:
-#
-# TODO: We might want to consider supporting additional ones (like rar and 7z)
-SUPPORTED_EXTS = [ '.zip', '.tar.gz', '.tgz', '.tar.bz2' ]

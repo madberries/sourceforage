@@ -6,9 +6,9 @@ import shutil
 from pathlib import Path
 from subprocess import Popen, PIPE
 
-from .helpers.constants import GAAPHP_TIMEOUT, HACCSCMD_ROOT_DIR
-from .helpers.file_utils import root_of_relpath
-from .helpers.process_utils import run_cmd
+from .utils.constants import GAAPHP_TIMEOUT, SF_ROOT_DIR
+from .utils.file import root_of_relpath
+from .utils.process import run_cmd
 
 def run_gaaphp(root_dir, cve_dir, additional_args=[]):
     old_cwd = os.getcwd()
@@ -119,7 +119,7 @@ def run_gaaphp(root_dir, cve_dir, additional_args=[]):
 
         # Copy over the analysis results to the JSON directory in comfortfuzz
         # for comfortfuzz to generate an exploit from this.
-        copy_to_dir = os.path.join(HACCSCMD_ROOT_DIR, 'comfortfuzz/json_out')
+        copy_to_dir = os.path.join(SF_ROOT_DIR, 'comfortfuzz/json_out')
         shutil.copyfile(output_json, os.path.join(copy_to_dir,
                         'egen-%s.json' % cve_dir))
 

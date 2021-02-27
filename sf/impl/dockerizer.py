@@ -5,7 +5,7 @@ import sys
 
 from pathlib import Path
 
-from .helpers.file_utils import replace_lines
+from .utils.file import replace_lines
 
 def dockerize(root_dir, path_to_codebase, use_old_template=False):
     old_cwd = os.getcwd()

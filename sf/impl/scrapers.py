@@ -15,13 +15,12 @@ from .analysis import run_gaaphp
 from .dockerizer import dockerize
 from .exploit_runner import run_exploit
 from .versions import Version, InvalidVersionFormat, compute_version_range
-from .helpers.constants import CAPABLE_OF_WORKING, FORAGED_OUT_DIR, \
-                               HACCSCMD_ROOT_DIR
-from .helpers.file_utils import get_filename_from_download_url, without_ext
-from .helpers.process_utils import run_cmd
-from .helpers.string_utils import border, contains_substr
-from .helpers.zip_utils import extract_archive, is_supported_archive_type, \
-                               list_archive_contents
+from .utils.constants import CAPABLE_OF_WORKING, FORAGED_OUT_DIR, SF_ROOT_DIR
+from .utils.file import get_filename_from_download_url, without_ext
+from .utils.process import run_cmd
+from .utils.string import border, contains_substr
+from .utils.zip import extract_archive, is_supported_archive_type, \
+                       list_archive_contents
 
 class SourceforgeScraper:
     def __init__(self, cve, check_only_verified=False, success_msg='Exploit succeeded!'):
@@ -256,9 +255,9 @@ class SourceforgeScraper:
                            new_cve_dir, file=sys.stderr)
                     continue
 
-                exploits_dir = os.path.join(HACCSCMD_ROOT_DIR,
+                exploits_dir = os.path.join(SF_ROOT_DIR,
                                             'comfortfuzz/exploits')
-                json_out_dir = os.path.join(HACCSCMD_ROOT_DIR,
+                json_out_dir = os.path.join(SF_ROOT_DIR,
                                             'comfortfuzz/json_out')
                 cmd = ['docker', 'run', '--volume', exploits_dir + ':/exploits',
                         '--volume', json_out_dir + ':/json_out', '--rm', '-it',

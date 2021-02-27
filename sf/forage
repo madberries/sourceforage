@@ -34,8 +34,8 @@ import shutil
 import signal
 
 from impl.scrapers import SourceforgeScraper
-from impl.helpers.constants import CAPABLE_OF_WORKING, FORAGED_OUT_DIR
-from impl.helpers.file_utils import read_all_lines
+from impl.utils.constants import CAPABLE_OF_WORKING, FORAGED_OUT_DIR
+from impl.utils.file import read_all_lines
 
 def main(cmd_line):
     # Parse through all NVD files specified on the command line:

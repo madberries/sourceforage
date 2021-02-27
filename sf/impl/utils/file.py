@@ -1,7 +1,7 @@
 import os
 
 from .constants import SUPPORTED_EXTS
-from .zip_utils import UnsupportedArchive
+from .zip import UnsupportedArchive
 
 def without_ext(filename):
     for ext in SUPPORTED_EXTS:
