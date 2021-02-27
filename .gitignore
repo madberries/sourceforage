@@ -7,3 +7,7 @@
 
 # Directories gnereated by this project
 /sourceforge/
+
+# Public/private keys required for comfortfuzz repo access
+/comfortfuzz/gitlab_key
+/comfortfuzz/gitlab_key.pub
