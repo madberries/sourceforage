@@ -30,7 +30,7 @@ DBPASS = ''
 # Possible Var X Value (i.e. cartesian product) of possible configuration
 # replacements
 DBHOST_REPLACEMENTS = [['dbhost', 'hostname'], [DBHOST]]
-DBNAME_REPLACEMENTS = [['dbname', 'default_db'], [DBNAME]]
+DBNAME_REPLACEMENTS = [['dbname', 'default_db', 'database'], [DBNAME]]
 DBUSER_REPLACEMENTS = [['dbuser', 'dbusername'], [DBUSER]]
 DBPASS_REPLACEMENTS = [['dbpass', 'dbpassword'], [DBPASS]]
 
