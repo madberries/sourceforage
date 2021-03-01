@@ -67,6 +67,8 @@ class Version:
         if self.any:
             return '*'
         return self.full
+    def __repr__(self):
+        return self.__str__()
 
 class VersionRange:
     def __init__(self, lower, upper):
@@ -75,8 +77,8 @@ class VersionRange:
     def check(self, vers):
         return self.lower.check(vers) and self.upper.check(vers)
     def __str__(self):
-        if self.lower.any or self.lower.op is Op.GE:
-            if self.upper.any or self.upper.op is Op.LE:
+        if self.lower.any or self.lower.op >= Op.EQ:
+            if self.upper.any or self.upper.op <= Op.EQ:
                 return '[%s .. %s]' % (self.lower, self.upper)
             assert(not self.upper.any and self.upper.op is Op.LT)
             return '[%s .. %s)' % (self.lower, self.upper)
@@ -85,6 +87,8 @@ class VersionRange:
             return '(%s .. %s]' % (self.lower, self.upper)
         assert(not self.upper.any and self.upper.op is Op.LT)
         return '(%s .. %s)' % (self.lower, self.upper)
+    def __repr__(self):
+        return self.__str__()
 
 def compute_version_range(vers, lower_bound, upper_bound):
     vers_obj = Version(vers)
