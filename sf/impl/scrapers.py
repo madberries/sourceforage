@@ -17,14 +17,17 @@ from .exploit_runner import run_exploit
 from .versions import Version, InvalidVersionFormat, compute_version_range
 from .utils.constants import CAPABLE_OF_WORKING, FORAGED_OUT_DIR, SF_ROOT_DIR
 from .utils.file import get_filename_from_download_url, without_ext
+from .utils.logging import ItemizedLogger
 from .utils.process import run_cmd
-from .utils.string import border, contains_substr
+from .utils.string import border, contains_substr, pretty_print_dir_contents
 from .utils.zip import extract_archive, is_supported_archive_type, \
                        list_archive_contents
 
 class SourceforgeScraper:
-    def __init__(self, cve, check_only_verified=False, success_msg='Exploit succeeded!'):
+    def __init__(self, cve, log, check_only_verified=False,
+            success_msg='Exploit succeeded!'):
         self.cve = cve
+        self.log = log
         self.check_only_verified = check_only_verified
         self.success_msg = success_msg
         self.vuln_files = set()
@@ -120,7 +123,6 @@ class SourceforgeScraper:
         if not rel_path.startswith(os.path.sep):
             rel_path = os.path.sep + rel_path
 
-        print('Getting the %s listing of %s' % (listing_type, rel_path))
         page = requests.get('https://sourceforge.net' + rel_path)
         contents = page.content
         soup = BeautifulSoup(contents, 'html.parser')
@@ -303,13 +305,14 @@ class SourceforgeScraper:
                 for vers_range in self.valid_version_ranges:
                     if vers_range.check(pot_vers):
                         print('Checking version %s, url=[%s]' % (pot_vers, url))
-                        self.download_codebase(url, self.cpe_map[vers_range], False)
+                        self.download_codebase(url, self.cpe_map[vers_range],
+                                               False)
             except InvalidVersionFormat:
                 print('Finding versions in ' + title)
                 self.find_and_download_codebases(
                         SourceforgeScraper.get_codebase_listing(url))
 
-    def scrape_and_run(self):
+    def scrape_and_run_exploit(self):
         # Is an SQL injection possible?
         inj_possible = False
 
@@ -354,31 +357,46 @@ class SourceforgeScraper:
                 valid_version_ranges.append(version_range)
                 cpe_map[version_range] = cpe_info[0]
 
+            ranges_str = ', '.join([str(x) for x in valid_version_ranges])
+            self.log.new_task('Discovered plausible SQL injection attack vector '
+                              'affecting the following versions:\n\n' +
+                              ranges_str, title=cve.cve)
+
             for f in first:
                 for s in second:
-                    print(border('Starting search for %s:%s in %s' % \
-                            (f, s, cve.cve)))
+                    self.log.new_subtask('Searching sourceforge for codebase '
+                                         f"matching {f}:{s}")
                     name_to_search = \
                         SourceforgeScraper.search_for_name(cve.description,
                                                            f, s)
                     if name_to_search is not None:
-                        print('Searching for codebase "%s"...' % name_to_search)
+                        self.log.info('Searching for codebase '
+                                      f"'{name_to_search}'...")
                         k = 0
                         results_map = \
                             SourceforgeScraper.find_codebase(name_to_search)
                         for key, value in results_map.items():
                             if fuzz.ratio(key, name_to_search) < 65:
-                                print('Skipping project "%s" due to fuzzy '
-                                      'mismatch' % key)
+                                self.log.info(f"Skipping project '{key}' due"
+                                              'to fuzzy mismatch', mark=False)
                                 continue
                             else:
-                                print('Matched fuzzy "%s" ~= "%s"' %
-                                      (key, name_to_search))
+                                self.log.info('Found potential (fuzzy) match: '
+                                              f"'{key}' ~ '{name_to_search}'",
+                                              mark=True)
                             dir_listing = \
                                 SourceforgeScraper.get_codebase_listing(
                                         os.path.join(value, 'files'))
+                            self.log.info('Getting the directory listing for '
+                                          f"<sourceforge-base>{value}...")
+                            print_func = lambda x: self.log.info(x)
+                            pretty_print_dir_contents(dir_listing,
+                                                      print_func=print_func)
                             self.find_and_download_codebases(dir_listing)
                             if k > 5:
-                                print('Skipping... Too many results!')
+                                self.log.warn('Skipping... Too many results!')
                                 break
                             k = k + 1
+                    self.log.complete_subtask(msg=f"Ending search of {f}:{s}")
+
+            self.log.complete_task()

@@ -36,6 +36,7 @@ import signal
 from impl.scrapers import SourceforgeScraper
 from impl.utils.constants import CAPABLE_OF_WORKING, FORAGED_OUT_DIR
 from impl.utils.file import read_all_lines
+from impl.utils.logging import ItemizedLogger
 
 def main(cmd_line):
     # Parse through all NVD files specified on the command line:
@@ -80,6 +81,8 @@ def main(cmd_line):
     # Message that is printed upon a successful end-to-end exploit
     success_msg = read_all_lines('success.msg')
 
+    log = ItemizedLogger()
+
     # For each json file, parse the CVE items and determine whther this is a
     # queriable SQL injection.
     for nvd_data in nvd_inputs:
@@ -102,9 +105,9 @@ def main(cmd_line):
                 continue
 
             sourceforge_scraper = \
-                    SourceforgeScraper(cve, success_msg=success_msg,
+                    SourceforgeScraper(cve, log, success_msg=success_msg,
                                        check_only_verified=cmd_line.verified)
-            sourceforge_scraper.scrape_and_run()
+            sourceforge_scraper.scrape_and_run_exploit()
 
 def parse_args():
     """

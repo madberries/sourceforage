@@ -1,6 +1,8 @@
 import itertools
+import os
 import re
 import shutil
+import textwrap
 
 from tempfile import mkstemp
 
@@ -60,9 +62,52 @@ def make_replacements(replacement_list, config_file):
                 r'\1' + value + r'\3', config_file, count=1):
             break
 
+def screen_width():
+    _, cols = os.popen('stty size', 'r').read().split()
+    return int(cols)
+
+def pad_with_spaces(msg, cols=None, right_justify=False):
+    if cols is None:
+        cols = screen_width()
+    if right_justify:
+        fmt = "{:>%d}"
+    else:
+        fmt = "{:<%d}"
+    return (fmt % (cols-1)).format(msg)
+
 def border(s):
-    x = '*' * (len(s)+4)
-    return '%s\n* %s *\n%s' % (x, s, x)
+    b = '*' * (len(s)+4)
+    return f"{b}\n* {s} *\n{b}"
+
+def pretty_print_dir_contents(dirlisting, print_func=print):
+    folders, files = dirlisting
+    folders = [ x for x in folders.keys() ]
+    files   = [ x for x in files.keys() ]
+    if len(files) + len(folders) <= 0:
+        print_func('    <empty>')
+    else:
+        folders.sort()
+        files.sort()
+        for d in folders:
+            print_func(f"    + {d}")
+        for f in files:
+            print_func(f"    - {f}")
+
+def wrap_text(s, width=None, indent_on_newline=0):
+    if indent_on_newline < 0:
+        raise ValueError
+    if width is None:
+        width = screen_width()
+    wrapped = textwrap.wrap(s, width=width)
+    if indent_on_newline == 0:
+        return '\n'.join(wrapped)
+    first_line = wrapped[0]
+    remaining_lines = '\n'.join(wrapped[1:])
+    reduced_width = width - indent_on_newline
+    margin = ' ' * indent_on_newline
+    remaining_lines = textwrap.wrap(remaining_lines, width=reduced_width)
+    remaining_lines = '\n'.join([margin + x for x in remaining_lines])
+    return f"{first_line}\n{remaining_lines}"
 
 def contains_substr(s, substr):
     try:
