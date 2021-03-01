@@ -11,11 +11,14 @@ from asyncio import create_subprocess_exec, get_event_loop, set_event_loop, \
                     wait_for
 from subprocess import Popen, run
 
-async def run_cmd_async(cmd, cmd_msg, timeout=None, cwd=None):
+from .logging import EXEC_COLOR
+
+async def run_cmd_async(cmd, cmd_msg, log, timeout=None, cwd=None):
     cmd_str = ' '.join([str(v) for v in cmd])
-    print('** Running %s -- executing: %s' % (cmd_msg, cmd_str))
+    log.log('** Running %s -- executing: %s' % (cmd_msg, cmd_str),
+            text_color=EXEC_COLOR)
     if cwd is not None:
-        print('** where CWD=(%s)...' % cwd)
+        log.log('** where CWD=(%s)...' % cwd, text_color=EXEC_COLOR)
     p = await create_subprocess_exec(*cmd, cwd=cwd,
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
 
@@ -35,7 +38,7 @@ async def run_cmd_async(cmd, cmd_msg, timeout=None, cwd=None):
         break
     return await p.wait()
 
-def run_cmd(cmd, cmd_msg, timeout=None, cwd=None):
+def run_cmd(cmd, cmd_msg, log, timeout=None, cwd=None):
     # Wait for the process to exit
     if sys.platform == "win32":
         loop = ProactorEventLoop() # For subprocess' pipes on Windows
@@ -44,19 +47,18 @@ def run_cmd(cmd, cmd_msg, timeout=None, cwd=None):
         loop = get_event_loop()
 
     # Check the return code and either True (on success) or False (on failure)
-    returncode = loop.run_until_complete(run_cmd_async(cmd, cmd_msg,
+    returncode = loop.run_until_complete(run_cmd_async(cmd, cmd_msg, log,
         timeout=timeout, cwd=cwd))
     if returncode != 0:
-        print('ERROR: Unable to run %s [return_code=%d]' %
-                (cmd_msg, returncode), file=sys.stderr)
+        log.error(f"ERROR: Unable to run {cmd_msg} [return_code={returncode}]")
         return False
     return True
 
-def stop_docker(container_id, image_name):
-    print('Stopping docker container (%s) for image \'%s\'... ' %
-            (container_id, image_name), end='')
+def stop_docker(container_id, image_name, log):
+    log.debug('Stopping docker container (%s) of image \'%s\'... ' %
+              (container_id, image_name))
     run(['docker', 'stop', container_id], stdout=subprocess.DEVNULL)
-    print('DONE!')
+    log.debug(f"Successfully docker container({container_id})")
 
 def get_running_dockers(name=None):
     running_dockers = []

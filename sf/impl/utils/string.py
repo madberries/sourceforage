@@ -56,11 +56,14 @@ def sed(pattern, replace, source, dest=None, count=0):
 
     return success
 
-def make_replacements(replacement_list, config_file):
+def make_replacements(replacement_list, config_file, log):
     for varname, value in itertools.product(*replacement_list):
         if sed(r'(^\$' + varname + '\s*=\s*("|\'))[^"]+(("|\')\s*;.*$)',
                 r'\1' + value + r'\3', config_file, count=1):
-            break
+            log.debug(f"Successfully replaced variable ${varname} with the value "
+                      f"\"{value}\"")
+            return True
+    return False
 
 def screen_width():
     _, cols = os.popen('stty size', 'r').read().split()

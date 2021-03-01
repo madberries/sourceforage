@@ -1,6 +1,7 @@
 import os
+import sys
 
-from colors import *
+from colors import ansilen, color, partial
 
 from .string import pad_with_spaces, screen_width, wrap_text
 
@@ -12,12 +13,16 @@ BOT_FMT    = '%s`---- [END OF %s] %s'
 
 SECTION_COLOR = partial(color, fg=255, bg=237)
 TITLE_COLOR   = partial(color, fg=255, bg=237, style='underline')
+EXEC_COLOR    = partial(color, fg=40, bg=255)
 INFO_COLOR    = partial(color, fg=237, bg=255)
 DEBUG_COLOR   = partial(color, fg=245, bg=255)
 WARN_COLOR    = partial(color, fg=128, bg=255)
 ERROR_COLOR   = partial(color, fg=196, bg=255, style='bold')
 
 class LoggingException(Exception):
+    pass
+
+class StepFailedException(Exception):
     pass
 
 class LogSection:
@@ -118,30 +123,34 @@ class ItemizedLogger:
         print(f"{e} {w} {i} {d}")
 
     def info(self, msg, mark=None):
-        self.log(msg, INFO_COLOR, mark=mark)
+        self.log(msg, text_color=INFO_COLOR, mark=mark)
 
     def debug(self, msg):
-        self.log(msg, DEBUG_COLOR)
+        self.log(msg, text_color=DEBUG_COLOR)
 
     def warn(self, msg):
-        self.log(msg, WARN_COLOR)
+        self.log(msg, text_color=WARN_COLOR, file=sys.stderr)
 
     def error(self, msg):
-        self.log(msg, ERROR_COLOR)
+        self.log(msg, text_color=ERROR_COLOR, file=sys.stderr)
 
-    def log(self, msg, text_color, mark=None):
-        depth = len(self.step_stack)
-        left_margin = SECTION_COLOR('| ' * depth)
-        fitted_cols = screen_width() - (depth * 2)
-        if mark is not None:
-            fitted_cols -= 1
-            if mark:
-                pass_or_fail = PASS_SIGN
-            else:
-                pass_or_fail = FAIL_SIGN
-            msg += f" {pass_or_fail}"
-        print(left_margin, end="")
-        print(text_color(pad_with_spaces(msg, cols=fitted_cols)))
+    def log(self, msg, text_color=INFO_COLOR, mark=None, file=sys.stdout):
+        lines = msg.splitlines()
+        last_line_idx = len(lines) - 1
+        for idx, line in enumerate(lines):
+            depth = len(self.step_stack)
+            left_margin = SECTION_COLOR('| ' * depth)
+            fitted_cols = screen_width() - (depth * 2)
+            if mark is not None and idx == last_line_idx:
+                fitted_cols -= 1
+                if mark:
+                    pass_or_fail = PASS_SIGN
+                else:
+                    pass_or_fail = FAIL_SIGN
+                line += f" {pass_or_fail}"
+            print(left_margin, end="", file=file)
+            print(text_color(pad_with_spaces(line, cols=fitted_cols)),
+                  file=file)
 
     def new_task(self, msg, title=None, subtask=False):
         if not subtask and self.task_running:

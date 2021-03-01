@@ -1,7 +1,7 @@
 import re
 
 from enum import IntEnum
-from packaging import version
+from packaging.version import parse
 
 class InvalidVersionFormat(Exception):
     pass
@@ -22,87 +22,115 @@ op_map     = {
 }
 inv_op_map = { v : k for k, v in op_map.items() }
 
-class Version:
-    def __init__(self, vers):
-        vers = vers.strip()
-        if vers == '*':
+class VersionCondition:
+    def __init__(self, version_cond_str):
+        version_cond_str = version_cond_str.strip()
+        if version_cond_str == '*':
+            # Wildcard case
             self.any = True
+            self.op = Op.EQ
+            self.version = None
         else:
             self.any = False
-            if vers.startswith('<') or vers.startswith('>'):
-                p = re.compile('((<|>)=?)\s*([0-9\.]+)(.*)')
-                m = p.match(vers)
-                if not bool(m):
-                    raise InvalidVersionFormat(vers)
-                self.op = op_map[m.group(1)]
-                self.vers = m.group(3)
-                self.extra = m.group(4)
-            else:
-                self.op = Op.EQ
-                p = re.compile('([0-9\.]+)(.*)')
-                m = p.match(vers)
-                if not bool(m):
-                    raise InvalidVersionFormat(vers)
-                self.vers = m.group(1)
-                self.extra = m.group(2)
-            self.parsed = version.parse(self.vers)
-            self.full = self.vers + self.extra
-    def check(self, vers):
-        assert(not vers.any and vers.op is Op.EQ)
+            p = re.compile('((<|>)=?|=)?\s*(.*)')
+            m = p.match(version_cond_str)
+            if not bool(m):
+                raise InvalidVersionFormat(version_cond_str)
+            op = m.group(1)
+            if op is None:
+                op = inv_op_map[Op.EQ]
+            self.op = op_map[op]
+            self.version = parse(m.group(3))
+
+    def check(self, version):
         if self.any:
             return True
-        print('Checking %s %s %s' % (vers.vers, inv_op_map[self.op], self.vers))
+        #print('Checking %s %s %s' % (vers.vers, inv_op_map[self.op], self.vers))
         if self.op is Op.LE:
-            return vers.parsed <= self.parsed
+            return version <= self.version
         if self.op is Op.LT:
-            return vers.parsed < self.parsed
+            return version < self.version
         if self.op is Op.EQ:
-            return vers.parsed == self.parsed
+            return version == self.version
         if self.op is Op.GT:
-            return vers.parsed > self.parsed
+            return version > self.version
         if self.op is Op.GE:
-            return vers.parsed >= self.parsed
+            return version >= self.version
         assert(false), 'Invalid operator: ' + self.op
+
     def __str__(self):
         if self.any:
             return '*'
-        return self.full
+        op = inv_op_map[self.op]
+        return f"{op} {self.version}?"
+
     def __repr__(self):
         return self.__str__()
 
 class VersionRange:
     def __init__(self, lower, upper):
+        # First some basic sanity checks...
+        #
+        # Valid inputs:
+        #  - both are wildcards
+        #  - both have same versions and both ops are Op.EQ
+        #  - * .. <|<= [version]
+        #  - >|>= [version] .. *
+        #  - >|>= [version] .. <|<= [version]
+        #
+        # All other inputs are invalid!
+        if lower.version == upper.version:
+            assert(upper.op == Op.EQ and lower.op == Op.EQ)
+        else:
+            full_range = True
+            if lower.any:
+                assert(upper.any or upper.op < Op.EQ), upper
+                full_range = False
+            if upper.any:
+                assert(lower.any or lower.op > Op.EQ), lower
+                full_range = False
+
+            if full_range:
+                assert(lower.version <= upper.version)
+                assert(lower.op > Op.EQ and upper.op < Op.EQ), \
+                        f"lower_condition: ({lower}), upper_condition: ({upper})"
         self.lower = lower
         self.upper = upper
-    def check(self, vers):
-        return self.lower.check(vers) and self.upper.check(vers)
+
+    def check(self, version_cond):
+        return self.lower.check(version_cond) and \
+               self.upper.check(version_cond)
+
     def __str__(self):
-        if self.lower.any or self.lower.op >= Op.EQ:
-            if self.upper.any or self.upper.op <= Op.EQ:
-                return '[%s .. %s]' % (self.lower, self.upper)
-            assert(not self.upper.any and self.upper.op is Op.LT)
-            return '[%s .. %s)' % (self.lower, self.upper)
-        assert(not self.lower.any and self.lower.op is Op.GT)
+        # If both are a wildcard, then just print '*'.
+        if self.lower.any:
+            if self.upper.any:
+                return '*'
+
+        # If both versions happen to be equal, just print a single version.
+        if self.lower.version == self.upper.version:
+            return str(self.lower.version)
+
+        # Otherwise, not a singleton (i.e. we print a valid range).
+        if self.lower.any or self.lower.op is Op.GE:
+            if self.upper.any or self.upper.op is Op.LE:
+                return f"[{self.lower} .. {self.upper}]"
+            return f"[{self.lower} .. {self.upper})"
         if self.upper.any or self.upper.op is Op.LE:
-            return '(%s .. %s]' % (self.lower, self.upper)
-        assert(not self.upper.any and self.upper.op is Op.LT)
-        return '(%s .. %s)' % (self.lower, self.upper)
+            return f"({self.lower} .. {self.upper}]"
+        return f"({self.lower} .. {self.upper})"
+
     def __repr__(self):
         return self.__str__()
 
 def compute_version_range(vers, lower_bound, upper_bound):
-    vers_obj = Version(vers)
+    vers_obj = VersionCondition(vers)
     if not vers_obj.any:
         assert(vers_obj.op is Op.EQ)
         assert(lower_bound == '*' and upper_bound == '*')
         return VersionRange(vers_obj, vers_obj)
     else:
-        lower_version = Version(lower_bound)
-        upper_version = Version(upper_bound)
-        assert(lower_version.any or lower_version.op >= Op.GT), lower_version.vers
-        assert(upper_version.any or upper_version.op <= Op.LT), upper_version.vers
-        assert(lower_version.any or upper_version.any or \
-                lower_version.parsed <= upper_version.parsed), \
-                '%s > %s' % (lower_version.vers, upper_version.vers)
+        lower_version = VersionCondition(lower_bound)
+        upper_version = VersionCondition(upper_bound)
         return VersionRange(lower_version, upper_version)
 

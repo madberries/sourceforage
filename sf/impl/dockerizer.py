@@ -6,13 +6,14 @@ import sys
 from pathlib import Path
 
 from .utils.file import replace_lines
+from .utils.logging import ItemizedLogger
 
-def dockerize(root_dir, path_to_codebase, use_old_template=False):
+def dockerize(root_dir, path_to_codebase, log, use_old_template=False):
     old_cwd = os.getcwd()
     try:
         # To make things a bit easier let's chdir to root_dir, and we'll reset
         # this back later in the finally.
-        print('Setting CWD to "%s"' % root_dir)
+        log.debug(f"Setting CWD to '{root_dir}'")
         os.chdir(root_dir)
 
         # Read in the CVE ini file.
@@ -28,8 +29,8 @@ def dockerize(root_dir, path_to_codebase, use_old_template=False):
 
         # Make sure the vulnerable file is where we are expecting it to be.
         if not Path(vuln_file).exists():
-            print('ERROR: Vulnerable file "%s" does not exist!' %
-                    vuln_file_path, file=sys.stderr)
+            log.error(f"ERROR: Vulnerable file '{vuln_file_path}' does not "
+                      'exist!')
             return False
 
         # Determine which template we should dockerize from.
@@ -41,16 +42,15 @@ def dockerize(root_dir, path_to_codebase, use_old_template=False):
 
         # Make sure the template directory can be located
         if not Path(template_dir).is_dir():
-            print('ERROR: Template directory "%s" either does not exist or is '
-                  'not a directory!' % template_dir, file=sys.stderr)
+            log.error(f"ERROR: Template directory '{template_dir}' either "
+                      'does not exist, or is not a directory!')
             return False
 
         # Make sure that the directory for the CVE we will dockerize does not
         # already exist.
         cve_dir = cve.lower()
         if Path(cve_dir).exists():
-            print('ERROR: CVE directory "%s" already exists!' % cve_dir,
-                  file=sys.stderr)
+            log.error(f"ERROR: CVE directory '{cve_dir}' already exists!")
             return False
 
         data_dir = os.path.join(cve_dir, 'data')
@@ -59,11 +59,11 @@ def dockerize(root_dir, path_to_codebase, use_old_template=False):
         # Copy the template zygote into the CVE directory for which we will
         # dockerize.  Also, copy over the codebase into the <CVE>/data/
         # directory
-        print('Copying %s template from "%s" to "%s"' % (template_suffix,
-              template_dir, cve_dir))
+        log.info(f"Copying {template_suffix} template from '{template_dir}' "
+                 f"to '{cve_dir}'")
         shutil.copytree(template_dir, cve_dir, symlinks=True)
-        print('Copying codebase "%s" into "%s"' % (path_to_codebase,
-              working_codebase))
+        log.info(f"Copying codebase '{path_to_codebase}' into "
+                 f"'{working_codebase}'")
         shutil.copytree(path_to_codebase, working_codebase, symlinks=True)
 
         # Copy over the cve.ini file
@@ -91,7 +91,7 @@ def dockerize(root_dir, path_to_codebase, use_old_template=False):
         replace_lines(dockerfile, [3], [docker_line])
     finally:
         # Set the CWD back to it's original path.
-        print('Resetting CWD back to "%s"' % old_cwd)
+        log.debug(f"Resetting CWD back to '{old_cwd}'")
         os.chdir(old_cwd)
 
     # Success!
