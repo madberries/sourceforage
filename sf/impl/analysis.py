@@ -9,6 +9,7 @@ from subprocess import Popen, PIPE
 from .utils.constants import GAAPHP_TIMEOUT, SF_ROOT_DIR
 from .utils.file import root_of_relpath
 from .utils.process import run_cmd
+from .utils.string import make_title
 
 
 def run_gaaphp(root_dir, cve_dir, log, additional_args=[]):
@@ -99,9 +100,10 @@ def run_gaaphp(root_dir, cve_dir, log, additional_args=[]):
                         'ERROR: Unexpected size of output (num_of_lines '
                         f"= {num_of_lines}) != 1!"
                     )
-                    log.debug('OUTPUT:')
+                    log.debug(make_title('start of sqlarity.py output'))
                     for line in out:
                         log.debug('    ' + line.decode('utf-8'))
+                    log.debug(make_title('end of sqlarity.py output'))
                     return False
                 cmd += ['--sqlarity', out[0].decode('utf-8')]
 

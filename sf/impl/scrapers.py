@@ -5,6 +5,7 @@ import requests
 import selectors
 import shutil
 import sys
+import traceback
 import urllib.parse
 
 from bs4 import BeautifulSoup
@@ -166,7 +167,7 @@ class SourceforgeScraper:
 
         # Iterate through each file listing to download
         for _, download_url in items:
-            self.log.info('Downloading codebase ' + download_url)
+            self.log.info(f"Downloading codebase {download_url}")
 
             # Extract the name of the file we are downloaded from the URL
             filename = get_filename_from_download_url(download_url)
@@ -192,8 +193,8 @@ class SourceforgeScraper:
                     try:
                         idx = f.rindex(vuln_file)
                         if idx == 0 or f[idx - 1] == os.path.sep:
-                            self.log.info('Found vulnerable file: %s --> %s' % \
-                                          (vuln_file, f), mark=True)
+                            self.log.success('Found vulnerable file: %s --> %s'
+                                             %  (vuln_file, f))
                             found_vuln_file = True
                             vuln_file = f
                             break
@@ -203,7 +204,7 @@ class SourceforgeScraper:
                     break
 
             if not found_vuln_file:
-                self.log.error('Unable to locate vulnerable file!', mark=False)
+                self.log.fail('Unable to locate vulnerable file!')
                 return
 
             # Make the CVE directory
@@ -264,7 +265,7 @@ class SourceforgeScraper:
                 if options is None:
                     options = '<Default>'
 
-                self.log.new_subtask('Running gaaphp with options: ' + options)
+                self.log.new_subtask(f"Running gaaphp with options: {options}")
                 success = False
                 try:
                     # Dockerize this codebase.
@@ -276,21 +277,21 @@ class SourceforgeScraper:
                         use_old_template=use_old_template
                     ):
                         self.log.error(
-                            'ERROR: Unable to docker codebase for ' + cve_lower
+                            f"Unable to docker codebase for {cve_lower}"
                         )
                         continue
 
                     # Move the CVE docker to a new directory so that we don't
                     # overwrite each consecutive run.
-                    if reg_globals:
-                        if sqlarity:
-                            new_cve_dir = cve_lower + '_gs'
-                        else:
-                            new_cve_dir = cve_lower + '_g'
-                    elif sqlarity:
-                        new_cve_dir = cve_lower + '_s'
+                    if new_template:
+                        opts_str = 'n'
                     else:
-                        new_cve_dir = cve_lower + '_noargs'
+                        opts_str = 'o'
+                    if reg_globals:
+                        opts_str += 'g'
+                    if sqlarity:
+                        opts_str += 's'
+                    new_cve_dir = f"{cve_lower}_{opts_str}"
                     from_dir = os.path.join(cve_dir, cve_lower)
                     to_dir = os.path.join(cve_dir, new_cve_dir)
                     self.log.debug(f"Moving {from_dir} to {to_dir}")
@@ -333,13 +334,11 @@ class SourceforgeScraper:
                     # Run the exploit end-to-end.
                     if run_exploit(cve_lower, webapp_path, self.log):
                         print(self.success_msg)
-                        self.log.info(
-                            'Sucessfully triggered exploit', mark=True
-                        )
+                        self.log.success('Sucessfully triggered exploit')
                         success = True
                         return True
                     else:
-                        self.log.info('Failed to trigger exploit', mark=False)
+                        self.log.fail('Failed to trigger exploit')
 
                     #value = input("Continue scraping? (y/N)... ")
                     #if value.lower() != 'y':
@@ -376,9 +375,8 @@ class SourceforgeScraper:
             # extras (i.e. rc1, rc2, beta, etc...)
             for vers_range in self.valid_version_ranges:
                 if vers_range.check(pot_vers):
-                    self.log.info(
-                        f"Matched version {pot_vers}, url=[{url}]",
-                        success=True
+                    self.log.success(
+                        f"Matched version {pot_vers}, url=[{url}]"
                     )
                     if self.download_codebase(
                         url, self.cpe_map[vers_range], True
@@ -392,10 +390,8 @@ class SourceforgeScraper:
                     raise InvalidVersionFormat
                 for vers_range in self.valid_version_ranges:
                     if vers_range.check(pot_vers):
-                        self.log.info(
-                            f"Matched version {pot_vers}, "
-                            f"url=[{url}]",
-                            mark=True
+                        self.log.success(
+                            f"Matched version {pot_vers}, url=[{url}]",
                         )
                         if self.download_codebase(
                             url, self.cpe_map[vers_range], False
@@ -433,17 +429,14 @@ class SourceforgeScraper:
             k = 0
             for key, value in results_map.items():
                 if fuzz.ratio(key, name_to_search) < 65:
-                    self.log.info(
-                        f"Skipping project '{key}' due to fuzzy "
-                        'mismatch',
-                        mark=False
+                    self.log.fail(
+                        f"Skipping project '{key}' due to fuzzy mismatch",
                     )
                     raise StepFailedException
                 else:
-                    self.log.info(
+                    self.log.success(
                         f"Found potential (fuzzy) match: '{key}' ~ "
                         f"'{name_to_search}'",
-                        mark=True
                     )
                     dir_listing = SourceforgeScraper.get_codebase_listing(
                         os.path.join(value, 'files')
@@ -520,23 +513,32 @@ class SourceforgeScraper:
                 for first_key in first_vals:
                     for second_key in second_vals:
                         self.log.new_subtask(
-                            'Searching sourceforge for '
-                            f"codebase matching {first_key}:"
-                            f"{second_key}"
+                            'Searching sourceforge for codebase matching '
+                            f"{first_key}:{second_key}"
                         )
                         try:
                             success_inner = \
                                     self.scrape_and_run_exploit0(cve, first_key,
                                                                  second_key)
                             break
+                        except StepFailedException:
+                            # Don't log these since it's obvious from the
+                            # output that a step failed
+                            success_inner = False
                         except:
                             success_inner = False
+                            self.log.log_exception(traceback.format_exc())
                         finally:
-                            msg = f"Ending search of {first_key}:{second_key}"
                             self.log.complete_subtask(
-                                msg=msg, success=success_inner
+                                msg=f"Ending search of {first_key}:{second_key}",
+                                success=success_inner
                             )
+            except StepFailedException:
+                # Don't log these since it's obvious from the output that a
+                # step failed
+                success_outer = False
             except:
                 success_outer = False
+                self.log.log_exception(traceback.format_exc())
             finally:
                 self.log.complete_task(success=success_outer)

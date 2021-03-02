@@ -1,5 +1,7 @@
 from bs4 import BeautifulSoup
 
+from .string import make_title
+
 
 def get_all_forms(url, session, log):
     """Returns all form tags found on a web page's `url` """
@@ -13,9 +15,9 @@ def get_all_forms(url, session, log):
 
     # Parse and pretty-print the HTML response.
     soup = BeautifulSoup(res.html.html, "html.parser")
-    log.debug(
-        f"==============\nHTTP response:\n==============\n\n" + soup.prettify()
-    )
+    log.debug(make_title('start of HTTP response'))
+    log.debug(soup.prettify())
+    log.debug(make_title('end of HTTP response'))
 
     # Return the forms generated from this response.
     return soup.find_all("form")

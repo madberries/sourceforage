@@ -3,7 +3,7 @@ import sys
 
 from colors import ansilen, color, partial
 
-from .string import pad_with_spaces, screen_width, wrap_text
+from .string import make_title, pad_with_spaces, screen_width, wrap_text
 
 # Local "constants"
 FAIL_SIGN = '\u274c'    # Red crossed-out mark
@@ -140,8 +140,8 @@ class ItemizedLogger:
         d = DEBUG_COLOR('This is a DEBUG')
         print(f"{e} {w} {i} {d}")
 
-    def info(self, msg, mark=None):
-        self.log(msg, text_color=INFO_COLOR, mark=mark)
+    def info(self, msg):
+        self.log(msg, text_color=INFO_COLOR)
 
     def debug(self, msg):
         self.log(msg, text_color=DEBUG_COLOR)
@@ -152,16 +152,24 @@ class ItemizedLogger:
     def error(self, msg):
         self.log(msg, text_color=ERROR_COLOR, file=sys.stderr)
 
-    def log(self, msg, text_color=INFO_COLOR, mark=None, file=sys.stdout):
+    def success(self, msg):
+        self.log(msg, text_color=INFO_COLOR, mark_success=True)
+
+    def fail(self, msg):
+        self.log(msg, text_color=ERROR_COLOR, file=sys.stderr,
+                 mark_success=False)
+
+    def log(self, msg, text_color=INFO_COLOR, mark_success=None,
+            file=sys.stdout):
         lines = msg.splitlines()
         last_line_idx = len(lines) - 1
         for idx, line in enumerate(lines):
             depth = len(self.step_stack)
             left_margin = SECTION_COLOR('| ' * depth)
             fitted_cols = screen_width() - (depth * 2)
-            if mark is not None and idx == last_line_idx:
+            if mark_success is not None and idx == last_line_idx:
                 fitted_cols -= 1
-                if mark:
+                if mark_success:
                     pass_or_fail = PASS_SIGN
                 else:
                     pass_or_fail = FAIL_SIGN
@@ -170,6 +178,10 @@ class ItemizedLogger:
             print(
                 text_color(pad_with_spaces(line, cols=fitted_cols)), file=file
             )
+
+    def log_exception(self, trace):
+        self.info(make_title('exception', width=40))
+        self.error(trace)
 
     def new_task(self, msg, title=None, subtask=False):
         if not subtask and self.task_running:
