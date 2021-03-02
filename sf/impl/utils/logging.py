@@ -18,6 +18,8 @@ INFO_COLOR = partial(color, fg=237, bg=255)
 DEBUG_COLOR = partial(color, fg=245, bg=255)
 WARN_COLOR = partial(color, fg=128, bg=255)
 ERROR_COLOR = partial(color, fg=196, bg=255, style='bold')
+SUCCESS_COLOR = partial(color, fg=46, bg=16, style='bold')
+FAIL_COLOR = partial(color, fg=196, bg=16, style='bold')
 
 
 class LoggingException(Exception):
@@ -153,10 +155,10 @@ class ItemizedLogger:
         self.log(msg, text_color=ERROR_COLOR, file=sys.stderr)
 
     def success(self, msg):
-        self.log(msg, text_color=INFO_COLOR, mark_success=True)
+        self.log(msg, text_color=SUCCESS_COLOR, mark_success=True)
 
     def fail(self, msg):
-        self.log(msg, text_color=ERROR_COLOR, file=sys.stderr,
+        self.log(msg, text_color=FAIL_COLOR, file=sys.stderr,
                  mark_success=False)
 
     def log(self, msg, text_color=INFO_COLOR, mark_success=None,
