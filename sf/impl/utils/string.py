@@ -6,6 +6,7 @@ import textwrap
 
 from tempfile import mkstemp
 
+
 def sed0(fin, fout, pattern, replace, count):
     num_replaced = count
     success = False
@@ -26,6 +27,7 @@ def sed0(fin, fout, pattern, replace, count):
         raise E
 
     return success
+
 
 def sed(pattern, replace, source, dest=None, count=0):
     """Reads a source file and writes the destination file.
@@ -56,18 +58,27 @@ def sed(pattern, replace, source, dest=None, count=0):
 
     return success
 
+
 def make_replacements(replacement_list, config_file, log):
     for varname, value in itertools.product(*replacement_list):
-        if sed(r'(^\$' + varname + '\s*=\s*("|\'))[^"]+(("|\')\s*;.*$)',
-                r'\1' + value + r'\3', config_file, count=1):
-            log.debug(f"Successfully replaced variable ${varname} with the value "
-                      f"\"{value}\"")
+        if sed(
+            r'(^\$' + varname + '\s*=\s*("|\'))[^"]+(("|\')\s*;.*$)',
+            r'\1' + value + r'\3',
+            config_file,
+            count=1
+        ):
+            log.debug(
+                f"Successfully replaced variable ${varname} with the value "
+                f"\"{value}\""
+            )
             return True
     return False
+
 
 def screen_width():
     _, cols = os.popen('stty size', 'r').read().split()
     return int(cols)
+
 
 def pad_with_spaces(msg, cols=None, right_justify=False):
     if cols is None:
@@ -76,16 +87,18 @@ def pad_with_spaces(msg, cols=None, right_justify=False):
         fmt = "{:>%d}"
     else:
         fmt = "{:<%d}"
-    return (fmt % (cols-1)).format(msg)
+    return (fmt % (cols - 1)).format(msg)
+
 
 def border(s):
-    b = '*' * (len(s)+4)
+    b = '*' * (len(s) + 4)
     return f"{b}\n* {s} *\n{b}"
+
 
 def pretty_print_dir_contents(dirlisting, print_func=print):
     folders, files = dirlisting
-    folders = [ x for x in folders.keys() ]
-    files   = [ x for x in files.keys() ]
+    folders = [x for x in folders.keys()]
+    files = [x for x in files.keys()]
     if len(files) + len(folders) <= 0:
         print_func('    <empty>')
     else:
@@ -95,6 +108,7 @@ def pretty_print_dir_contents(dirlisting, print_func=print):
             print_func(f"    + {d}")
         for f in files:
             print_func(f"    - {f}")
+
 
 def wrap_text(s, width=None, indent_on_newline=0):
     if indent_on_newline < 0:
@@ -111,6 +125,7 @@ def wrap_text(s, width=None, indent_on_newline=0):
     remaining_lines = textwrap.wrap(remaining_lines, width=reduced_width)
     remaining_lines = '\n'.join([margin + x for x in remaining_lines])
     return f"{first_line}\n{remaining_lines}"
+
 
 def contains_substr(s, substr):
     try:

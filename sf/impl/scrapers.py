@@ -28,9 +28,16 @@ from .utils.string import border, contains_substr, pretty_print_dir_contents
 from .utils.zip import extract_archive, is_supported_archive_type, \
                        list_archive_contents
 
+
 class SourceforgeScraper:
-    def __init__(self, cve, log, check_only_verified=False,
-            success_msg='Exploit succeeded!'):
+
+    def __init__(
+        self,
+        cve,
+        log,
+        check_only_verified=False,
+        success_msg='Exploit succeeded!'
+    ):
         self.cve = cve
         self.log = log
         self.check_only_verified = check_only_verified
@@ -70,18 +77,19 @@ class SourceforgeScraper:
     def search_for_name0(desc, name):
         search_idx = contains_substr(desc, name)
         if search_idx >= 0:
-            return desc[search_idx : search_idx + len(name)]
-        for replace in [ ' ', '-' ]:
+            return desc[search_idx:search_idx + len(name)]
+        for replace in [' ', '-']:
             search_idx = contains_substr(desc, name.replace('_', replace))
             if search_idx >= 0:
-                return desc[search_idx : search_idx + len(name)]
+                return desc[search_idx:search_idx + len(name)]
         return None
 
     @staticmethod
     def search_for_name(desc, first, second):
         if first != second:
-            result = SourceforgeScraper.search_for_name0(desc,
-                                                         first + ' ' + second)
+            result = SourceforgeScraper.search_for_name0(
+                desc, first + ' ' + second
+            )
             if result is None:
                 result = SourceforgeScraper.search_for_name0(desc, second)
             if result is None:
@@ -94,11 +102,13 @@ class SourceforgeScraper:
     def find_codebase(project_name):
         results_map = dict()
         project_name = urllib.parse.quote(project_name)
-        page = requests.get(f"{SOURCEFORGE_BASE_URL}/directory/language:php"
-                            f"/?q={project_name}")
+        page = requests.get(
+            f"{SOURCEFORGE_BASE_URL}/directory/language:php"
+            f"/?q={project_name}"
+        )
         contents = page.content
         soup = BeautifulSoup(contents, 'html.parser')
-        projects = soup.find_all('a', {'class': 'result-heading-title'})
+        projects = soup.find_all('a', { 'class': 'result-heading-title'})
         for project in projects:
             link = project.get('href')
             name = project.contents[1].string
@@ -138,7 +148,7 @@ class SourceforgeScraper:
         # on this page.
         for entity_type, entity_map in \
                 [('folder', folders_map), ('file', files_map)]:
-            entities = soup.find_all('tr', {'class': entity_type})
+            entities = soup.find_all('tr', { 'class': entity_type })
             for entity in entities:
                 title = entity.get('title')
                 if title is not None:
@@ -150,7 +160,7 @@ class SourceforgeScraper:
         # If the url provided was from a file listing, then the URL provided
         # should already be the download URL
         if is_file:
-            items = [ ('N/A', url) ]
+            items = [('N/A', url)]
         else:
             items = SourceforgeScraper.get_codebase_file_listing(url).items()
 
@@ -163,8 +173,10 @@ class SourceforgeScraper:
 
             # Make sure that we support this archive type extension
             if not is_supported_archive_type(filename):
-                self.log.warn('Skipping... File extension not supported for'
-                              f"file: {filename}")
+                self.log.warn(
+                    'Skipping... File extension not supported for'
+                    f"file: {filename}"
+                )
                 continue
 
             # Generate the download request
@@ -179,7 +191,7 @@ class SourceforgeScraper:
                 for f in contents_list:
                     try:
                         idx = f.rindex(vuln_file)
-                        if idx == 0 or f[idx-1] == os.path.sep:
+                        if idx == 0 or f[idx - 1] == os.path.sep:
                             self.log.info('Found vulnerable file: %s --> %s' % \
                                           (vuln_file, f), mark=True)
                             found_vuln_file = True
@@ -233,13 +245,17 @@ class SourceforgeScraper:
                     continue
 
                 # Generate the .cve.properties file for this docker.
-                self.generate_ini_file(cve_dir, cpe, vuln_file,
-                                       reg_globals=reg_globals,
-                                       sqlarity=sqlarity)
+                self.generate_ini_file(
+                    cve_dir,
+                    cpe,
+                    vuln_file,
+                    reg_globals=reg_globals,
+                    sqlarity=sqlarity
+                )
 
                 # Generate list of gaaphp options
                 options = None
-                for opt in [ 'new_template', 'reg_globals', 'sqlarity' ]:
+                for opt in ['new_template', 'reg_globals', 'sqlarity']:
                     if locals()[opt]:
                         if options is None:
                             options = opt
@@ -253,10 +269,15 @@ class SourceforgeScraper:
                 try:
                     # Dockerize this codebase.
                     use_old_template = reg_globals or not new_template
-                    if not dockerize(cve_dir, common_root, self.log,
-                                     use_old_template=use_old_template):
-                        self.log.error('ERROR: Unable to docker codebase for '
-                                + cve_lower)
+                    if not dockerize(
+                        cve_dir,
+                        common_root,
+                        self.log,
+                        use_old_template=use_old_template
+                    ):
+                        self.log.error(
+                            'ERROR: Unable to docker codebase for ' + cve_lower
+                        )
                         continue
 
                     # Move the CVE docker to a new directory so that we don't
@@ -277,29 +298,44 @@ class SourceforgeScraper:
 
                     # Run gaaphp analysis.
                     if not run_gaaphp(cve_dir, new_cve_dir, self.log):
-                        self.log.error('ERROR: Unable to analyze codebase for '
-                                       f"'{new_cve_dir}'")
+                        self.log.error(
+                            'ERROR: Unable to analyze codebase for '
+                            f"'{new_cve_dir}'"
+                        )
                         continue
 
-                    exploits_dir = os.path.join(SF_ROOT_DIR,
-                                                'comfortfuzz/exploits')
-                    json_out_dir = os.path.join(SF_ROOT_DIR,
-                                                'comfortfuzz/json_out')
-                    cmd = ['docker', 'run', '--volume',
-                            f"{exploits_dir}:/exploits",
-                            '--volume', f"{json_out_dir}:/json_out", '--rm',
-                            '-it', 'comfortfuzz', './run_comfuzz', new_cve_dir]
+                    exploits_dir = os.path.join(
+                        SF_ROOT_DIR, 'comfortfuzz/exploits'
+                    )
+                    json_out_dir = os.path.join(
+                        SF_ROOT_DIR, 'comfortfuzz/json_out'
+                    )
+                    cmd = [
+                        'docker',
+                        'run',
+                        '--volume',
+                        f"{exploits_dir}:/exploits",
+                        '--volume',
+                        f"{json_out_dir}:/json_out",
+                        '--rm',
+                        '-it',
+                        'comfortfuzz',
+                        './run_comfuzz',
+                        new_cve_dir
+                    ]
                     if not run_cmd(cmd, 'comfortfuzz', self.log):
                         continue
 
-                    webapp_path = os.path.join(os.path.join(cve_dir,
-                                                            new_cve_dir),
-                            os.path.join('data', common_root))
+                    webapp_path = os.path.join(
+                        os.path.join(cve_dir, new_cve_dir),
+                        os.path.join('data', common_root)
+                    )
                     # Run the exploit end-to-end.
                     if run_exploit(cve_lower, webapp_path, self.log):
                         print(self.success_msg)
-                        self.log.info('Sucessfully triggered exploit',
-                                      mark=True)
+                        self.log.info(
+                            'Sucessfully triggered exploit', mark=True
+                        )
                         success = True
                         return True
                     else:
@@ -340,10 +376,13 @@ class SourceforgeScraper:
             # extras (i.e. rc1, rc2, beta, etc...)
             for vers_range in self.valid_version_ranges:
                 if vers_range.check(pot_vers):
-                    self.log.info(f"Matched version {pot_vers}, url=[{url}]",
-                                  success=True)
-                    if self.download_codebase(url, self.cpe_map[vers_range],
-                                              True):
+                    self.log.info(
+                        f"Matched version {pot_vers}, url=[{url}]",
+                        success=True
+                    )
+                    if self.download_codebase(
+                        url, self.cpe_map[vers_range], True
+                    ):
                         return True
 
         for title, url in folders.items():
@@ -353,11 +392,14 @@ class SourceforgeScraper:
                     raise InvalidVersionFormat
                 for vers_range in self.valid_version_ranges:
                     if vers_range.check(pot_vers):
-                        self.log.info(f"Matched version {pot_vers}, "
-                                      f"url=[{url}]", mark=True)
-                        if self.download_codebase(url,
-                                                  self.cpe_map[vers_range],
-                                                  False):
+                        self.log.info(
+                            f"Matched version {pot_vers}, "
+                            f"url=[{url}]",
+                            mark=True
+                        )
+                        if self.download_codebase(
+                            url, self.cpe_map[vers_range], False
+                        ):
                             return True
             except InvalidVersionFormat:
                 msg = f"Finding matching versions in directory '{title}', " \
@@ -367,8 +409,9 @@ class SourceforgeScraper:
                 try:
                     dir_listing = SourceforgeScraper.get_codebase_listing(url)
                     print_func = lambda x: self.log.info(x)
-                    pretty_print_dir_contents(dir_listing,
-                                              print_func=print_func)
+                    pretty_print_dir_contents(
+                        dir_listing, print_func=print_func
+                    )
                     success = self.find_and_download_codebases(dir_listing)
                 finally:
                     self.log.complete_subtask(success=success)
@@ -381,7 +424,8 @@ class SourceforgeScraper:
 
     def scrape_and_run_exploit0(self, cve, first_key, second_key):
         name_to_search = SourceforgeScraper.search_for_name(
-                cve.description, first_key, second_key)
+            cve.description, first_key, second_key
+        )
 
         if name_to_search is not None:
             self.log.info(f"Searching for codebase '{name_to_search}'...")
@@ -389,19 +433,29 @@ class SourceforgeScraper:
             k = 0
             for key, value in results_map.items():
                 if fuzz.ratio(key, name_to_search) < 65:
-                    self.log.info(f"Skipping project '{key}' due to fuzzy "
-                                  'mismatch', mark=False)
+                    self.log.info(
+                        f"Skipping project '{key}' due to fuzzy "
+                        'mismatch',
+                        mark=False
+                    )
                     raise StepFailedException
                 else:
-                    self.log.info(f"Found potential (fuzzy) match: '{key}' ~ "
-                                  f"'{name_to_search}'", mark=True)
+                    self.log.info(
+                        f"Found potential (fuzzy) match: '{key}' ~ "
+                        f"'{name_to_search}'",
+                        mark=True
+                    )
                     dir_listing = SourceforgeScraper.get_codebase_listing(
-                            os.path.join(value, 'files'))
-                    self.log.info('Getting the directory listing for '
-                                  f"{SOURCEFORGE_BASE_URL}{value}...")
+                        os.path.join(value, 'files')
+                    )
+                    self.log.info(
+                        'Getting the directory listing for '
+                        f"{SOURCEFORGE_BASE_URL}{value}..."
+                    )
                     print_func = lambda x: self.log.info(x)
-                    pretty_print_dir_contents(dir_listing,
-                                              print_func=print_func)
+                    pretty_print_dir_contents(
+                        dir_listing, print_func=print_func
+                    )
                     if self.find_and_download_codebases(dir_listing):
                         return True
                     if k > 5:
@@ -424,7 +478,7 @@ class SourceforgeScraper:
                 if idx != 0:
                     inj_possible = True
                 if int(cwe[4:]) == 89:
-                    inj_possible = True;
+                    inj_possible = True
             except ValueError:
                 inj_possible = True
 
@@ -442,7 +496,8 @@ class SourceforgeScraper:
                 second_vals.add(cpe_split[4])
                 version_minor = cpe_split[6]
                 version_range = compute_version_range(
-                        cpe_split[5], cpe_info[1], cpe_info[2])
+                    cpe_split[5], cpe_info[1], cpe_info[2]
+                )
                 if version_minor != '*':
                     # Just write over the lower/upper extra, because
                     # I've found no consistency with the minor version
@@ -455,16 +510,20 @@ class SourceforgeScraper:
                 cpe_map[version_range] = cpe_info[0]
 
             ranges_str = ', '.join([str(x) for x in valid_version_ranges])
-            self.log.new_task('Discovered plausible SQL injection attack vector'
-                              ' affecting the following versions:\n\n' +
-                              ranges_str, title=cve.cve)
+            self.log.new_task(
+                'Discovered plausible SQL injection attack vector'
+                ' affecting the following versions:\n\n' + ranges_str,
+                title=cve.cve
+            )
             success_outer = True
             try:
                 for first_key in first_vals:
                     for second_key in second_vals:
-                        self.log.new_subtask('Searching sourceforge for '
-                                             f"codebase matching {first_key}:"
-                                             f"{second_key}")
+                        self.log.new_subtask(
+                            'Searching sourceforge for '
+                            f"codebase matching {first_key}:"
+                            f"{second_key}"
+                        )
                         try:
                             success_inner = \
                                     self.scrape_and_run_exploit0(cve, first_key,
@@ -474,8 +533,9 @@ class SourceforgeScraper:
                             success_inner = False
                         finally:
                             msg = f"Ending search of {first_key}:{second_key}"
-                            self.log.complete_subtask(msg=msg,
-                                                      success=success_inner)
+                            self.log.complete_subtask(
+                                msg=msg, success=success_inner
+                            )
             except:
                 success_outer = False
             finally:

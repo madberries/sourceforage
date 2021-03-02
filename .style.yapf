@@ -1,0 +1,13 @@
+[style]
+based_on_style = pep8
+spaces_before_comment = 4
+blank_line_before_nested_class_or_def = true
+coalesce_brackets = true
+column_limit = 80
+dedent_closing_brackets = true
+each_dict_entry_on_separate_line = true
+spaces_around_power_operator = true
+spaces_around_dict_delimiters = true
+split_all_top_level_comma_separated_values = true
+split_before_dot = true
+split_complex_comprehension = true

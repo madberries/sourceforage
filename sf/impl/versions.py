@@ -3,8 +3,10 @@ import re
 from enum import IntEnum
 from packaging.version import parse
 
+
 class InvalidVersionFormat(Exception):
     pass
+
 
 class Op(IntEnum):
     LE = 1
@@ -13,16 +15,13 @@ class Op(IntEnum):
     GT = 4
     GE = 5
 
-op_map     = {
-        '<': Op.LT,
-        '<=': Op.LE,
-        '=': Op.EQ,
-        '>': Op.GT,
-        '>=': Op.GE
-}
-inv_op_map = { v : k for k, v in op_map.items() }
+
+op_map = { '<': Op.LT, '<=': Op.LE, '=': Op.EQ, '>': Op.GT, '>=': Op.GE }
+inv_op_map = { v: k for k, v in op_map.items() }
+
 
 class VersionCondition:
+
     def __init__(self, version_cond_str):
         version_cond_str = version_cond_str.strip()
         if version_cond_str == '*':
@@ -56,7 +55,7 @@ class VersionCondition:
             return version > self.version
         if self.op is Op.GE:
             return version >= self.version
-        assert(false), 'Invalid operator: ' + self.op
+        assert (false), 'Invalid operator: ' + self.op
 
     def __str__(self):
         if self.any:
@@ -67,7 +66,9 @@ class VersionCondition:
     def __repr__(self):
         return self.__str__()
 
+
 class VersionRange:
+
     def __init__(self, lower, upper):
         # First some basic sanity checks...
         #
@@ -80,20 +81,20 @@ class VersionRange:
         #
         # All other inputs are invalid!
         if lower.version == upper.version:
-            assert(upper.op == Op.EQ and lower.op == Op.EQ)
+            assert (upper.op == Op.EQ and lower.op == Op.EQ)
         else:
             full_range = True
             if lower.any:
-                assert(upper.any or upper.op < Op.EQ), upper
+                assert (upper.any or upper.op < Op.EQ), upper
                 full_range = False
             if upper.any:
-                assert(lower.any or lower.op > Op.EQ), lower
+                assert (lower.any or lower.op > Op.EQ), lower
                 full_range = False
 
             if full_range:
-                assert(lower.version <= upper.version)
+                assert (lower.version <= upper.version)
                 assert(lower.op > Op.EQ and upper.op < Op.EQ), \
-                        f"lower_condition: ({lower}), upper_condition: ({upper})"
+                       f"lower_condition: ({lower}), upper_condition: ({upper})"
         self.lower = lower
         self.upper = upper
 
@@ -123,14 +124,14 @@ class VersionRange:
     def __repr__(self):
         return self.__str__()
 
+
 def compute_version_range(vers, lower_bound, upper_bound):
     vers_obj = VersionCondition(vers)
     if not vers_obj.any:
-        assert(vers_obj.op is Op.EQ)
-        assert(lower_bound == '*' and upper_bound == '*')
+        assert (vers_obj.op is Op.EQ)
+        assert (lower_bound == '*' and upper_bound == '*')
         return VersionRange(vers_obj, vers_obj)
     else:
         lower_version = VersionCondition(lower_bound)
         upper_version = VersionCondition(upper_bound)
         return VersionRange(lower_version, upper_version)
-

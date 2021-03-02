@@ -21,8 +21,11 @@ import sys
 # our python path.
 haccs_ta2_home = os.environ.get('HACCSTA2_HOME')
 if haccs_ta2_home is None:
-    print('ERROR: HACCSTA2_HOME is not set (this should point to the root of '
-            'the \'haccs-ta2\' repo)', file=sys.stderr)
+    print(
+        'ERROR: HACCSTA2_HOME is not set (this should point to the root of '
+        'the \'haccs-ta2\' repo)',
+        file=sys.stderr
+    )
     exit(1)
 sys.path.append(os.path.join(haccs_ta2_home, 'cve2'))
 from cve import CVE, Product
@@ -38,6 +41,7 @@ from impl.utils.constants import CAPABLE_OF_WORKING, FORAGED_OUT_DIR
 from impl.utils.file import read_all_lines
 from impl.utils.logging import ItemizedLogger
 
+
 def main(cmd_line):
     # Parse through all NVD files specified on the command line:
     nvd_inputs = []
@@ -46,12 +50,12 @@ def main(cmd_line):
             with gzip.GzipFile(infile, 'r') as f:
                 input = (json.load(f))
                 input['filename'] = infile
-                nvd_inputs.append (input)
+                nvd_inputs.append(input)
         else:
-            with open (infile, 'r') as f:
+            with open(infile, 'r') as f:
                 input = (json.load(f))
                 input['filename'] = infile
-                nvd_inputs.append (input)
+                nvd_inputs.append(input)
 
     # Block all signals for now, but may decide to include SIGINT at some point.
     signal.pthread_sigmask(signal.SIG_BLOCK, signal.valid_signals())
@@ -59,8 +63,11 @@ def main(cmd_line):
     # This directory is commit, so it should be there obviously, but just in
     # case...
     if not os.path.isdir(FORAGED_OUT_DIR):
-        print('ERROR: \'%s\' does not exist or is not a directory!'
-                % FORAGED_OUT_DIR, file=sys.stderr)
+        print(
+            'ERROR: \'%s\' does not exist or is not a directory!' %
+            FORAGED_OUT_DIR,
+            file=sys.stderr
+        )
         exit(1)
 
     # Start from a fresh output directory for the foraged codebases.
@@ -74,8 +81,10 @@ def main(cmd_line):
         elif os.path.isfile(full_path):
             os.remove(full_path)
         else:
-            print('ERROR: "%s" is not a file or a directory' % full_path,
-                  file=sys.stderr)
+            print(
+                'ERROR: "%s" is not a file or a directory' % full_path,
+                file=sys.stderr
+            )
             exit(1)
 
     # Message that is printed upon a successful end-to-end exploit
@@ -86,8 +95,10 @@ def main(cmd_line):
     # For each json file, parse the CVE items and determine whther this is a
     # queriable SQL injection.
     for nvd_data in nvd_inputs:
-        print("Have %d CVEs to process from %s" %
-                (len(nvd_data['CVE_Items']),nvd_data['filename']))
+        print(
+            "Have %d CVEs to process from %s" %
+            (len(nvd_data['CVE_Items']), nvd_data['filename'])
+        )
 
         for cve_base in nvd_data['CVE_Items']:
             cve = CVE(cve_base)
@@ -109,18 +120,29 @@ def main(cmd_line):
                                        check_only_verified=cmd_line.verified)
             sourceforge_scraper.scrape_and_run_exploit()
 
+
 def parse_args():
     """
     parse command line arguments
     """
-    parser = argparse.ArgumentParser(description='Discovers and generates PHP '
-            'exploits automatically (via sourceforge) from NVD json data feed')
-    parser.add_argument('infiles', nargs="+",
-            help="Compressed json file as downloaded from NVD's website, e.g. "
-            "https://nvd.nist.gov/feeds/json/cve/1.0/nvdcve-1.0-2018.json.gz")
-    parser.add_argument('-v', '--verified', action='store_true',
-            help='Run only CVEs that have been verified to work end-to-end')
+    parser = argparse.ArgumentParser(
+        description='Discovers and generates PHP '
+        'exploits automatically (via sourceforge) from NVD json data feed'
+    )
+    parser.add_argument(
+        'infiles',
+        nargs="+",
+        help="Compressed json file as downloaded from NVD's website, e.g. "
+        "https://nvd.nist.gov/feeds/json/cve/1.0/nvdcve-1.0-2018.json.gz"
+    )
+    parser.add_argument(
+        '-v',
+        '--verified',
+        action='store_true',
+        help='Run only CVEs that have been verified to work end-to-end'
+    )
     return parser.parse_args()
+
 
 if __name__ == "__main__":
     args = parse_args()

@@ -1,5 +1,6 @@
 from bs4 import BeautifulSoup
 
+
 def get_all_forms(url, session, log):
     """Returns all form tags found on a web page's `url` """
     # Issue the GET request.
@@ -7,17 +8,18 @@ def get_all_forms(url, session, log):
 
     # Make sure the response was OK.
     if res.status_code != 200:
-        log.error(f"ERROR: {url} returned status code = " +
-                  page.status_code)
+        log.error(f"ERROR: {url} returned status code = " + page.status_code)
         return None
 
     # Parse and pretty-print the HTML response.
     soup = BeautifulSoup(res.html.html, "html.parser")
-    log.debug(f"==============\nHTTP response:\n==============\n\n" +
-              soup.prettify())
+    log.debug(
+        f"==============\nHTTP response:\n==============\n\n" + soup.prettify()
+    )
 
     # Return the forms generated from this response.
     return soup.find_all("form")
+
 
 def get_form_details(form):
     """Returns the HTML details of a form,
@@ -36,9 +38,10 @@ def get_form_details(form):
     for input_tag in form.find_all("input"):
         input_type = input_tag.attrs.get("type", "text")
         input_name = input_tag.attrs.get("name")
-        input_value =input_tag.attrs.get("value", "")
-        inputs.append({"type": input_type, "name": input_name,
-                       "value": input_value})
+        input_value = input_tag.attrs.get("value", "")
+        inputs.append({
+            "type": input_type, "name": input_name, "value": input_value
+        })
 
     details["action"] = action
     details["method"] = method

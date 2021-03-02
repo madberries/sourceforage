@@ -5,14 +5,17 @@ from zipfile import ZipFile
 
 from .constants import SUPPORTED_EXTS
 
+
 class UnsupportedArchive(Exception):
     pass
+
 
 def is_supported_archive_type(filename):
     for ext in SUPPORTED_EXTS:
         if filename.endswith(ext):
             return True
     return False
+
 
 def list_archive_contents(filename, contents):
     mem_zip = BytesIO(contents)
@@ -32,6 +35,7 @@ def list_archive_contents(filename, contents):
             for member in tf.getmembers():
                 names.append(member.name)
         return names
+
 
 def extract_archive(filename, contents, extracted_path):
     mem_zip = BytesIO(contents)

@@ -8,6 +8,7 @@ from pathlib import Path
 from .utils.file import replace_lines
 from .utils.logging import ItemizedLogger
 
+
 def dockerize(root_dir, path_to_codebase, log, use_old_template=False):
     old_cwd = os.getcwd()
     try:
@@ -29,8 +30,10 @@ def dockerize(root_dir, path_to_codebase, log, use_old_template=False):
 
         # Make sure the vulnerable file is where we are expecting it to be.
         if not Path(vuln_file).exists():
-            log.error(f"ERROR: Vulnerable file '{vuln_file_path}' does not "
-                      'exist!')
+            log.error(
+                f"ERROR: Vulnerable file '{vuln_file_path}' does not "
+                'exist!'
+            )
             return False
 
         # Determine which template we should dockerize from.
@@ -40,10 +43,12 @@ def dockerize(root_dir, path_to_codebase, log, use_old_template=False):
             template_suffix = 'new'
         template_dir = '../../templates/baseline_' + template_suffix
 
-        # Make sure the template directory can be located
+        # Make sure the template directory can be located.
         if not Path(template_dir).is_dir():
-            log.error(f"ERROR: Template directory '{template_dir}' either "
-                      'does not exist, or is not a directory!')
+            log.error(
+                f"ERROR: Template directory '{template_dir}' either "
+                'does not exist, or is not a directory!'
+            )
             return False
 
         # Make sure that the directory for the CVE we will dockerize does not
@@ -58,30 +63,44 @@ def dockerize(root_dir, path_to_codebase, log, use_old_template=False):
 
         # Copy the template zygote into the CVE directory for which we will
         # dockerize.  Also, copy over the codebase into the <CVE>/data/
-        # directory
-        log.info(f"Copying {template_suffix} template from '{template_dir}' "
-                 f"to '{cve_dir}'")
+        # directory.
+        log.info(
+            f"Copying {template_suffix} template from '{template_dir}' "
+            f"to '{cve_dir}'"
+        )
         shutil.copytree(template_dir, cve_dir, symlinks=True)
-        log.info(f"Copying codebase '{path_to_codebase}' into "
-                 f"'{working_codebase}'")
+        log.info(
+            f"Copying codebase '{path_to_codebase}' into "
+            f"'{working_codebase}'"
+        )
         shutil.copytree(path_to_codebase, working_codebase, symlinks=True)
 
-        # Copy over the cve.ini file
+        # Copy over the cve.ini file.
         shutil.copyfile('.cve.ini', os.path.join(cve_dir, '.cve.ini'))
 
         # Replace all of the relevant lines in the template to be consistent
         # with what's in the CVE ini file.
-        replace_lines(os.path.join(cve_dir, 'README.md'), [1, 3],
-                ['# %s' % cve, 'PHP exploit for %s (%s)' % (cve, vuln_file)])
-        replace_lines(os.path.join(cve_dir, 'config.yml'), [4, 16, 26],
-                ['firmware_version: ' + version, 'exploit_name: ' + cve,
-                 'cpe_product: ' + cpe])
+        replace_lines(
+            os.path.join(cve_dir, 'README.md'), [1, 3],
+            ['# %s' % cve, 'PHP exploit for %s (%s)' % (cve, vuln_file)]
+        )
+        replace_lines(
+            os.path.join(cve_dir, 'config.yml'), [4, 16, 26],
+            [
+                'firmware_version: ' + version,
+                'exploit_name: ' + cve,
+                'cpe_product: ' + cpe
+            ]
+        )
         doit_path = os.path.join(cve_dir, os.path.join('data', 'doit.sh'))
-        replace_lines(doit_path, [9, 10], [
-            'docker build -t aarno-%s . || exit_on_error "Couldn\'t build '
-            'docker container"' % cve_dir,
-            'docker run --rm --privileged -p 80:80 aarno-%s' % cve_dir
-        ])
+        replace_lines(
+            doit_path, [9, 10],
+            [
+                'docker build -t aarno-%s . || exit_on_error "Couldn\'t build '
+                'docker container"' % cve_dir,
+                'docker run --rm --privileged -p 80:80 aarno-%s' % cve_dir
+            ]
+        )
         docker_line = 'COPY ' + os.path.basename(path_to_codebase)
         if use_old_template:
             docker_line += '/ /var/www/html'
