@@ -11,6 +11,8 @@ SF_ROOT_DIR = os.path.dirname(
     )
 )
 
+SOURCEFORGE_BASE_URL = 'https://sourceforge.net'
+
 # Output directory for downloaded codebases
 FORAGED_OUT_DIR = 'foraged'
 

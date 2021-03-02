@@ -12,13 +12,15 @@ from datetime import datetime
 from fuzzywuzzy import fuzz
 from packaging import version
 from packaging.version import LegacyVersion
+from urllib.parse import urljoin
 
 from .analysis import run_gaaphp
 from .dockerizer import dockerize
 from .exploit_runner import run_exploit
 from .versions import VersionCondition, InvalidVersionFormat, \
                       compute_version_range
-from .utils.constants import CAPABLE_OF_WORKING, FORAGED_OUT_DIR, SF_ROOT_DIR
+from .utils.constants import CAPABLE_OF_WORKING, FORAGED_OUT_DIR, \
+                             SF_ROOT_DIR, SOURCEFORGE_BASE_URL
 from .utils.file import get_filename_from_download_url, without_ext
 from .utils.logging import ItemizedLogger, StepFailedException
 from .utils.process import run_cmd
@@ -91,8 +93,9 @@ class SourceforgeScraper:
     @staticmethod
     def find_codebase(project_name):
         results_map = dict()
-        page = requests.get('https://sourceforge.net/directory/language:php/?q='
-                + urllib.parse.quote(project_name))
+        project_name = urllib.parse.quote(project_name)
+        page = requests.get(f"{SOURCEFORGE_BASE_URL}/directory/language:php"
+                            f"/?q={project_name}")
         contents = page.content
         soup = BeautifulSoup(contents, 'html.parser')
         projects = soup.find_all('a', {'class': 'result-heading-title'})
@@ -126,7 +129,8 @@ class SourceforgeScraper:
         if not rel_path.startswith(os.path.sep):
             rel_path = os.path.sep + rel_path
 
-        page = requests.get('https://sourceforge.net' + rel_path)
+        url = urljoin(SOURCEFORGE_BASE_URL, rel_path)
+        page = requests.get(url)
         contents = page.content
         soup = BeautifulSoup(contents, 'html.parser')
 
@@ -281,18 +285,21 @@ class SourceforgeScraper:
                                                 'comfortfuzz/exploits')
                     json_out_dir = os.path.join(SF_ROOT_DIR,
                                                 'comfortfuzz/json_out')
-                    cmd = ['docker', 'run', '--volume', exploits_dir + ':/exploits',
-                            '--volume', json_out_dir + ':/json_out', '--rm', '-it',
-                            'comfortfuzz', './run_comfuzz', new_cve_dir]
+                    cmd = ['docker', 'run', '--volume',
+                            f"{exploits_dir}:/exploits",
+                            '--volume', f"{json_out_dir}:/json_out", '--rm',
+                            '-it', 'comfortfuzz', './run_comfuzz', new_cve_dir]
                     if not run_cmd(cmd, 'comfortfuzz', self.log):
                         continue
 
-                    webapp_path = os.path.join(os.path.join(cve_dir, new_cve_dir),
+                    webapp_path = os.path.join(os.path.join(cve_dir,
+                                                            new_cve_dir),
                             os.path.join('data', common_root))
                     # Run the exploit end-to-end.
                     if run_exploit(cve_lower, webapp_path, self.log):
                         print(self.success_msg)
-                        self.log.info('Sucessfully triggered exploit', mark=True)
+                        self.log.info('Sucessfully triggered exploit',
+                                      mark=True)
                         success = True
                         return True
                     else:
@@ -353,9 +360,9 @@ class SourceforgeScraper:
                                                   False):
                             return True
             except InvalidVersionFormat:
-                self.log.new_subtask('Finding matching versions in directory '
-                                     f"'{title}' (where url=<sourceforge-base>"
-                                     f"/{url})...")
+                msg = f"Finding matching versions in directory '{title}', " \
+                      f"where url={SOURCEFORGE_BASE_URL}/{url})..."
+                self.log.new_subtask(msg)
                 success = False
                 try:
                     dir_listing = SourceforgeScraper.get_codebase_listing(url)
@@ -391,7 +398,7 @@ class SourceforgeScraper:
                     dir_listing = SourceforgeScraper.get_codebase_listing(
                             os.path.join(value, 'files'))
                     self.log.info('Getting the directory listing for '
-                                  f"<sourceforge-base>{value}...")
+                                  f"{SOURCEFORGE_BASE_URL}{value}...")
                     print_func = lambda x: self.log.info(x)
                     pretty_print_dir_contents(dir_listing,
                                               print_func=print_func)
