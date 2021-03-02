@@ -118,7 +118,7 @@ class LogSection:
             fmtd_prefix = SECTION_COLOR(pad_with_spaces(left_margin))
             suffix = BOT_FMT % (indent_str, step, pass_or_fail)
             cols -= 1    # Note: pass/fail marks appear to consume a couple
-                         # of characters in the terminal.
+            # of characters in the terminal.
 
         fmtd_suffix = SECTION_COLOR(pad_with_spaces(suffix, cols=cols))
         if empty_msg:
@@ -158,11 +158,13 @@ class ItemizedLogger:
         self.log(msg, text_color=SUCCESS_COLOR, mark_success=True)
 
     def fail(self, msg):
-        self.log(msg, text_color=FAIL_COLOR, file=sys.stderr,
-                 mark_success=False)
+        self.log(
+            msg, text_color=FAIL_COLOR, file=sys.stderr, mark_success=False
+        )
 
-    def log(self, msg, text_color=INFO_COLOR, mark_success=None,
-            file=sys.stdout):
+    def log(
+        self, msg, text_color=INFO_COLOR, mark_success=None, file=sys.stdout
+    ):
         lines = msg.splitlines()
         last_line_idx = len(lines) - 1
         for idx, line in enumerate(lines):

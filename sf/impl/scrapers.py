@@ -13,6 +13,7 @@ from datetime import datetime
 from fuzzywuzzy import fuzz
 from packaging import version
 from packaging.version import LegacyVersion
+from pathlib import Path
 from urllib.parse import urljoin
 
 from .analysis import run_gaaphp
@@ -193,8 +194,10 @@ class SourceforgeScraper:
                     try:
                         idx = f.rindex(vuln_file)
                         if idx == 0 or f[idx - 1] == os.path.sep:
-                            self.log.success('Found vulnerable file: %s --> %s'
-                                             %  (vuln_file, f))
+                            self.log.success(
+                                'Found vulnerable file: %s --> %s' %
+                                (vuln_file, f)
+                            )
                             found_vuln_file = True
                             vuln_file = f
                             break
@@ -291,17 +294,17 @@ class SourceforgeScraper:
                         opts_str += 'g'
                     if sqlarity:
                         opts_str += 's'
-                    new_cve_dir = f"{cve_lower}_{opts_str}"
-                    from_dir = os.path.join(cve_dir, cve_lower)
-                    to_dir = os.path.join(cve_dir, new_cve_dir)
-                    self.log.debug(f"Moving {from_dir} to {to_dir}")
-                    shutil.move(from_dir, to_dir)
+                    new_cve_dirname = f"{cve_lower}_{opts_str}"
+                    old_cve_dir = os.path.join(cve_dir, cve_lower)
+                    new_cve_dir = os.path.join(cve_dir, new_cve_dirname)
+                    self.log.debug(f"Moving {old_cve_dir} to {new_cve_dir}")
+                    shutil.move(old_cve_dir, new_cve_dir)
 
                     # Run gaaphp analysis.
-                    if not run_gaaphp(cve_dir, new_cve_dir, self.log):
+                    if not run_gaaphp(cve_dir, new_cve_dirname, self.log):
                         self.log.error(
                             'ERROR: Unable to analyze codebase for '
-                            f"'{new_cve_dir}'"
+                            f"'{new_cve_dirname}'"
                         )
                         continue
 
@@ -322,20 +325,22 @@ class SourceforgeScraper:
                         '-it',
                         'comfortfuzz',
                         './run_comfuzz',
-                        new_cve_dir
+                        new_cve_dirname
                     ]
                     if not run_cmd(cmd, 'comfortfuzz', self.log):
                         continue
 
                     webapp_path = os.path.join(
-                        os.path.join(cve_dir, new_cve_dir),
-                        os.path.join('data', common_root)
+                        new_cve_dir, os.path.join('data', common_root)
                     )
                     # Run the exploit end-to-end.
                     if run_exploit(cve_lower, webapp_path, self.log):
                         print(self.success_msg)
                         self.log.success('Sucessfully triggered exploit')
                         success = True
+                        # Mark this in the FS so that we can easily query the
+                        # successes at a later date
+                        Path(new_cve_dir, '.success').touch()
                         return True
                     else:
                         self.log.fail('Failed to trigger exploit')
@@ -375,9 +380,7 @@ class SourceforgeScraper:
             # extras (i.e. rc1, rc2, beta, etc...)
             for vers_range in self.valid_version_ranges:
                 if vers_range.check(pot_vers):
-                    self.log.success(
-                        f"Matched version {pot_vers}, url=[{url}]"
-                    )
+                    self.log.success(f"Matched version {pot_vers}, url=[{url}]")
                     if self.download_codebase(
                         url, self.cpe_map[vers_range], True
                     ):

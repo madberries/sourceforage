@@ -137,8 +137,8 @@ def contains_substr(s, substr):
 
 def make_title(msg, width=80, pad='-'):
     msg_len = len(msg)
-    num_pad_chars = width - msg_len - 2  # The 2 accounts for extra spaces
+    num_pad_chars = width - msg_len - 2    # The 2 accounts for extra spaces
     half_of_num_pad_chars = num_pad_chars / 2
-    left_pad  = pad * math.floor(half_of_num_pad_chars)
+    left_pad = pad * math.floor(half_of_num_pad_chars)
     right_pad = pad * math.ceil(half_of_num_pad_chars)
     return f"{left_pad} {msg} {right_pad}"
