@@ -1,23 +1,23 @@
 #!/usr/bin/env python3
 #
-# usage: sourceforge [-h] [-v] infiles [infiles ...]
+# usage: forage [-h] [-v] [-c] [-p] [--cve CVE] infiles [infiles ...]
 #
 # Discovers and generates PHP exploits automatically (via sourceforge) from NVD
 # json data feed
 #
 # positional arguments:
-#   infiles         Compressed json file as downloaded from NVD's website, e.g.
+#   infiles         compressed json file as downloaded from NVD's website, e.g.
 #                   https://nvd.nist.gov/feeds/json/cve/1.0/nvdcve-1.0-2018.json
 #                   .gz
 #
 # optional arguments:
 #   -h, --help      show this help message and exit
-#   -v, --verified  Run only CVEs that have been verified to work end-to-end
-#   -c, --clean     Clears the foraged directory and starts foraging from
+#   -v, --verified  run only CVEs that have been verified to work end-to-end
+#   -c, --clean     clears the foraged directory and starts foraging from
 #                   scratch
-#   -p, --prompt    Prompt after attempting to run an exploit end-to-end
-#   --cve CVE       Only search for the specified CVE(s) of interest
-#                   (comma-separated)
+#   -p, --prompt    prompt after attempting to run an exploit end-to-end
+#   --cve CVE       only search for the specified CVE(s) of interest (comma-
+#                   separated)
 
 import os
 import sys
@@ -178,31 +178,31 @@ def parse_args():
     parser.add_argument(
         'infiles',
         nargs="+",
-        help="Compressed json file as downloaded from NVD's website, e.g. "
+        help="compressed json file as downloaded from NVD's website, e.g. "
         "https://nvd.nist.gov/feeds/json/cve/1.0/nvdcve-1.0-2018.json.gz"
     )
     parser.add_argument(
         '-v',
         '--verified',
         action='store_true',
-        help='Run only CVEs that have been verified to work end-to-end'
+        help='run only CVEs that have been verified to work end-to-end'
     )
     parser.add_argument(
         '-c',
         '--clean',
         action='store_true',
-        help='Clears the foraged directory and starts foraging from scratch'
+        help='clears the foraged directory and starts foraging from scratch'
     )
     parser.add_argument(
         '-p',
         '--prompt',
         action='store_true',
-        help='Prompt after attempting to run an exploit end-to-end'
+        help='prompt after attempting to run an exploit end-to-end'
     )
     parser.add_argument(
         '--cve',
         type=str,
-        help='Only search for the specified CVE(s) of interest '
+        help='only search for the specified CVE(s) of interest '
         '(comma-separated)'
     )
     return parser.parse_args()
