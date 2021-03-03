@@ -424,9 +424,12 @@ class SourceforgeScraper:
         # it.
         return False
 
-    def scrape_and_run_exploit0(self, cve, first_key, second_key):
-        name_to_search = SourceforgeScraper.search_for_name(
-            cve.description, first_key, second_key
+    def scrape_and_run_exploit0(self, cve, vendors, product):
+        # TODO: Maybe the vendor information can aid us in the search,
+        #       but it appears to me that the product information is
+        #       enough to go on...
+        name_to_search = SourceforgeScraper.search_for_name0(
+            cve.description, product
         )
 
         if name_to_search is not None:
@@ -493,12 +496,12 @@ class SourceforgeScraper:
         if len(vuln_files) > 0:
             # An SQL injection is possible, and there is one or more
             # vulnerable PHP files found.
-            first_vals = set()
-            second_vals = set()
+            vendors = set()
+            products = set()
             for cpe_info in cve.cpe_list_flat:
                 cpe_split = cpe_info[0].split(':')
-                first_vals.add(cpe_split[3])
-                second_vals.add(cpe_split[4])
+                vendors.add(cpe_split[3])
+                products.add(cpe_split[4])
                 version_minor = cpe_split[6]
                 version_range = compute_version_range(
                     cpe_split[5], cpe_info[1], cpe_info[2]
@@ -520,33 +523,40 @@ class SourceforgeScraper:
                 ' affecting the following versions:\n\n' + ranges_str,
                 title=cve.cve
             )
+
+            # Print out the CPE map (in case it's useful).
             self.log.debug('CPE map:\n--------\n')
             self.log.debug('\n'.join([ f"{x[0]}: {x[1]}" for x in cpe_map.items() ]))
+
+            if len(vendors) == 1:
+                vendors_str = vendors.pop()
+            else:
+                vendors_str = ','.join(vendors)
+                vendors_str = f"{{{vendors_str}}}"
+
             success_outer = True
             try:
-                for first_key in first_vals:
-                    for second_key in second_vals:
-                        self.log.new_subtask(
-                            'Searching sourceforge for codebase matching '
-                            f"{first_key}:{second_key}"
+                for product in products:
+                    self.log.new_subtask(
+                        'Searching sourceforge for codebase matching '
+                        f"{vendors_str}:{product}"
+                    )
+                    try:
+                        success_inner = \
+                                self.scrape_and_run_exploit0(cve, vendors, product)
+                        break
+                    except StepFailedException:
+                        # Don't log these since it's obvious from the
+                        # output that a step failed
+                        success_inner = False
+                    except:
+                        success_inner = False
+                        self.log.log_exception(traceback.format_exc())
+                    finally:
+                        self.log.complete_subtask(
+                            msg=f"Ending search of {vendors_str}:{product}",
+                            success=success_inner
                         )
-                        try:
-                            success_inner = \
-                                    self.scrape_and_run_exploit0(cve, first_key,
-                                                                 second_key)
-                            break
-                        except StepFailedException:
-                            # Don't log these since it's obvious from the
-                            # output that a step failed
-                            success_inner = False
-                        except:
-                            success_inner = False
-                            self.log.log_exception(traceback.format_exc())
-                        finally:
-                            self.log.complete_subtask(
-                                msg=f"Ending search of {first_key}:{second_key}",
-                                success=success_inner
-                            )
             except StepFailedException:
                 # Don't log these since it's obvious from the output that a
                 # step failed
