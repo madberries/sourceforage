@@ -101,12 +101,12 @@ class SourceforgeScraper:
             return SourceforgeScraper.search_for_name0(desc, first)
 
     @staticmethod
-    def find_codebase(project_name):
+    def find_codebase(project_name, page=1):
         results_map = dict()
         project_name = urllib.parse.quote(project_name)
         page = requests.get(
             f"{SOURCEFORGE_BASE_URL}/directory/language:php"
-            f"/?q={project_name}"
+            f"/?q={project_name}&page={page}"
         )
         contents = page.content
         soup = BeautifulSoup(contents, 'html.parser')
@@ -428,36 +428,42 @@ class SourceforgeScraper:
 
         if name_to_search is not None:
             self.log.info(f"Searching for codebase '{name_to_search}'...")
-            results_map = SourceforgeScraper.find_codebase(name_to_search)
-            k = 0
-            for key, value in results_map.items():
-                if fuzz.ratio(key, name_to_search) < 65:
-                    self.log.fail(
-                        f"Skipping project '{key}' due to fuzzy mismatch",
-                    )
-                    raise StepFailedException
-                else:
-                    self.log.success(
-                        f"Found potential (fuzzy) match: '{key}' ~ "
-                        f"'{name_to_search}'",
-                    )
-                    dir_listing = SourceforgeScraper.get_codebase_listing(
-                        os.path.join(value, 'files')
-                    )
-                    self.log.info(
-                        'Getting the directory listing for '
-                        f"{SOURCEFORGE_BASE_URL}{value}..."
-                    )
-                    print_func = lambda x: self.log.info(x)
-                    pretty_print_dir_contents(
-                        dir_listing, print_func=print_func
-                    )
-                    if self.find_and_download_codebases(dir_listing):
-                        return True
-                    if k > 5:
-                        self.log.warn('Skipping... Too many results!')
-                        return False
-                    k = k + 1
+            page = 1
+            while True:
+                results_map = SourceforgeScraper.find_codebase(name_to_search, page)
+                if len(results_map) == 0:
+                    self.log.info('No more codebases to search')
+                    break
+                k = 0
+                for key, value in results_map.items():
+                    if fuzz.ratio(key, name_to_search) < 65:
+                        self.log.fail(
+                            f"Skipping project '{key}' due to fuzzy mismatch",
+                        )
+                    else:
+                        self.log.success(
+                            f"Found potential (fuzzy) match: '{key}' ~ "
+                            f"'{name_to_search}'",
+                        )
+                        dir_listing = SourceforgeScraper.get_codebase_listing(
+                            os.path.join(value, 'files')
+                        )
+                        self.log.info(
+                            'Getting the directory listing for '
+                            f"{SOURCEFORGE_BASE_URL}{value}..."
+                        )
+                        print_func = lambda x: self.log.info(x)
+                        pretty_print_dir_contents(
+                            dir_listing, print_func=print_func
+                        )
+                        if self.find_and_download_codebases(dir_listing):
+                            return True
+                        if k > 5:
+                            self.log.warn('Skipping... Too many results!')
+                            return False
+                        k = k + 1
+                page += 1
+        return False
 
     def scrape_and_run_exploit(self):
         # Is an SQL injection possible?
@@ -511,6 +517,8 @@ class SourceforgeScraper:
                 ' affecting the following versions:\n\n' + ranges_str,
                 title=cve.cve
             )
+            self.log.debug('CPE map:\n--------\n')
+            self.log.debug('\n'.join([ f"{x[0]}: {x[1]}" for x in cpe_map.items() ]))
             success_outer = True
             try:
                 for first_key in first_vals:
