@@ -436,7 +436,9 @@ class SourceforgeScraper:
             self.log.info(f"Searching for codebase '{name_to_search}'...")
             page = 1
             while True:
-                results_map = SourceforgeScraper.find_codebase(name_to_search, page)
+                results_map = SourceforgeScraper.find_codebase(
+                    name_to_search, page
+                )
                 if len(results_map) == 0:
                     self.log.info('No more codebases to search')
                     break
@@ -526,7 +528,9 @@ class SourceforgeScraper:
 
             # Print out the CPE map (in case it's useful).
             self.log.debug('CPE map:\n--------\n')
-            self.log.debug('\n'.join([ f"{x[0]}: {x[1]}" for x in cpe_map.items() ]))
+            self.log.debug(
+                '\n'.join([f"{x[0]}: {x[1]}" for x in cpe_map.items()])
+            )
 
             if len(vendors) == 1:
                 vendors_str = vendors.pop()
