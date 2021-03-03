@@ -2,9 +2,7 @@ import os
 
 # The root directory of 'sourceforage'.
 SF_ROOT_DIR = os.path.dirname(
-    os.path.dirname(
-        os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
-    )
+    os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 )
 
 SOURCEFORGE_BASE_URL = 'https://sourceforge.net'

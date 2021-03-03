@@ -42,10 +42,10 @@ import json
 import shutil
 import signal
 
-from impl.scrapers import SourceforgeScraper
-from impl.utils.constants import CAPABLE_OF_WORKING, FORAGED_OUT_DIR
-from impl.utils.file import read_all_lines
-from impl.utils.logging import ItemizedLogger
+from sf.scrapers import SourceforgeScraper
+from sf.utils.constants import CAPABLE_OF_WORKING, FORAGED_OUT_DIR
+from sf.utils.file import read_all_lines
+from sf.utils.logging import ItemizedLogger
 
 
 def main(cmd_line):

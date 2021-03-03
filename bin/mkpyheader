@@ -1,0 +1,66 @@
+#!/usr/bin/bash
+#
+# usage: mkpyheader <path-to-python-script>
+#
+# Update's a python scripts header comment with user-specified command's usage
+# informaition.  NOTE: This script assumes that the user script prints the usage
+# when passed the '-h' flag on the command line.
+
+if [[ $# != 1 ]]; then
+  exec_name=$(basename "$0")
+  echo "usage: $exec_name <path-to-python-script>" 1>&2
+  exit 1
+fi
+
+script_path="$1"
+if [[ ! -f "$script_path" ]]; then
+  echo 'error: "'"$script_path"'" does not exist or is not a file!'
+  exit 1
+fi
+
+# Find the first non-empty line that does not start with a comment
+line_no=$(sed -n '/^[^#]/=' "$script_path"  | head -n 1)
+
+mktmp_file() {
+  tmp_path=$(mktemp)
+  if [[ $? != 0 ]]; then
+    echo 'error: failed to create temporary file!' 1>&2
+    exit 1
+  fi
+  echo "$tmp_path"
+}
+
+# Create temporary files required
+tmp_path1=$(mktmp_file)
+tmp_path2=$(mktmp_file)
+
+# Write out the header comment to the temporary file
+eval "$script_path" -h 2>/dev/null > "$tmp_path1"
+if [[ $? != 0 ]]; then
+  echo "error: failed to run script's usage command" 1>&2
+  rm -rf "$tmp_path1" "$tmp_path2"
+  exit 1
+fi
+
+cat "$tmp_path1" |& fold -w 78 -s |& boxes -d pound-cmt > "$tmp_path2"
+if [[ $? != 0 ]]; then
+  echo "error: unable to make script's comment header" 1>&2
+  rm -rf "$tmp_path1" "$tmp_path2"
+  exit 1
+fi
+
+# Write the first line "shebang" comment
+head -n 1 "$script_path" |& tee "$tmp_path1"
+echo '#' |& tee -a "$tmp_path1"
+
+# Write out the header comment
+cat "$tmp_path2" |& tee -a "$tmp_path1"
+echo >> "$tmp_path1"
+
+# Write out the remainder of the script
+tail -n +$line_no "$script_path" >> "$tmp_path1"
+
+# Copy back over the new script, and cleanup temporaries
+mv "$tmp_path1" "$script_path"
+chmod a+x "$script_path"
+rm -rf "$tmp_path2"
