@@ -38,12 +38,14 @@ class SourceforgeScraper:
         cve,
         log,
         check_only_verified=False,
-        success_msg='Exploit succeeded!'
+        success_msg='Exploit succeeded!',
+        prompt=False
     ):
         self.cve = cve
         self.log = log
         self.check_only_verified = check_only_verified
         self.success_msg = success_msg
+        self.prompt = prompt
         self.vuln_files = set()
         for word in cve.description.split(' '):
             if word.endswith('.php'):
@@ -345,9 +347,10 @@ class SourceforgeScraper:
                     else:
                         self.log.fail('Failed to trigger exploit')
 
-                    #value = input("Continue scraping? (y/N)... ")
-                    #if value.lower() != 'y':
-                    #    quit()
+                    if self.prompt:
+                        value = input("Continue scraping? (y/N)... ")
+                        if value.lower() != 'y':
+                            quit()
 
                     return False
                 finally:
