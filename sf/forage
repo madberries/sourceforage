@@ -16,6 +16,8 @@
 #   -c, --clean     Clears the foraged directory and starts foraging from
 #                   scratch
 #   -p, --prompt    Prompt after attempting to run an exploit end-to-end
+#   --cve CVE       Only search for the specified CVE(s) of interest
+#                   (comma-separated)
 
 import os
 import sys
@@ -74,28 +76,13 @@ def main(cmd_line):
         )
         exit(1)
 
-    # Start from a fresh output directory for the foraged codebases.
-    if cmd_line.clean:
-        for file_or_dir in os.listdir(FORAGED_OUT_DIR):
-            # Don't touch .gitignore, but everything else is fair game!
-            if file_or_dir == '.gitignore':
-                continue
-            full_path = os.path.join(FORAGED_OUT_DIR, file_or_dir)
-            if os.path.isdir(full_path):
-                shutil.rmtree(full_path)
-            elif os.path.isfile(full_path):
-                os.remove(full_path)
-            else:
-                print(
-                    'ERROR: "%s" is not a file or a directory' % full_path,
-                    file=sys.stderr
-                )
-                exit(1)
-
     # Message that is printed upon a successful end-to-end exploit
     success_msg = read_all_lines('success.msg')
 
     log = ItemizedLogger()
+
+    # Only relevant if --cve flag was used
+    found_cve = False
 
     # For each json file, parse the CVE items and determine whther this is a
     # queriable SQL injection.
@@ -107,32 +94,51 @@ def main(cmd_line):
 
         for cve_base in nvd_data['CVE_Items']:
             cve = CVE(cve_base)
+
+            # Check to see if we are looking for a particular CVE.
+            if cmd_line.cve is not None:
+                if cve.cve != 'CVE-' + cmd_line.cve:
+                    continue
+                else:
+                    found_cve = True
+
+            # Check to see if there was a previous run of this CVE.
             cve_pattern = os.path.join(FORAGED_OUT_DIR, f"{cve.cve.lower()}_*")
             matching_cve_dirs = glob.glob(cve_pattern, recursive=False)
             num_attempts = len(matching_cve_dirs)
             if num_attempts > 0:
-                succ_pattern = os.path.join(cve_pattern, '*/.success')
-                successful_cve_dirs = glob.glob(succ_pattern, recursive=False)
-                num_successes = len(successful_cve_dirs)
-                log.new_task(
-                    f"Already foraged this CVE ({num_attempts}/{num_successes}"
-                    ' runs succeeded)', title=cve.cve
-                )
-                successful_cve_dirs = [
-                    os.path.dirname(x) for x in successful_cve_dirs
-                ]
-                if num_successes == 0:
-                    log.info('Successful dockers: <None>')
+                if cmd_line.clean:
+                    # Remove the previous run (since we are cleaning).
+                    for cve_dir in matching_cve_dirs:
+                        shutil.rmtree(cve_dir)
                 else:
-                    if num_successes == 1:
-                        fmt_msg = 'Successful dockers: %s'
-                        successful_cves_str = successful_cve_dirs[0]
+                    succ_pattern = os.path.join(cve_pattern, '*/.success')
+                    successful_cve_dirs = glob.glob(
+                        succ_pattern, recursive=False
+                    )
+                    num_successes = len(successful_cve_dirs)
+                    log.new_task(
+                        f"Already foraged this CVE ({num_attempts}/{num_successes}"
+                        ' runs succeeded)',
+                        title=cve.cve
+                    )
+                    successful_cve_dirs = [
+                        os.path.dirname(x) for x in successful_cve_dirs
+                    ]
+                    if num_successes == 0:
+                        log.info('Successful dockers: <None>')
                     else:
-                        fmt_msg = 'Successful dockers:\n    %s'
-                        successful_cves_str = '\n    '.join(successful_cve_dirs)
-                    log.info(fmt_msg % successful_cves_str)
-                log.complete_task()
-                continue
+                        if num_successes == 1:
+                            fmt_msg = 'Successful dockers: %s'
+                            successful_cves_str = successful_cve_dirs[0]
+                        else:
+                            fmt_msg = 'Successful dockers:\n    %s'
+                            successful_cves_str = '\n    '.join(
+                                successful_cve_dirs
+                            )
+                        log.info(fmt_msg % successful_cves_str)
+                    log.complete_task()
+                    continue
 
             # If we are only running CVEs that have been verified to work
             # end-to-end, and this CVE is not one that has been verified
@@ -151,6 +157,14 @@ def main(cmd_line):
                                        check_only_verified=cmd_line.verified,
                                        prompt=cmd_line.prompt)
             sourceforge_scraper.scrape_and_run_exploit()
+
+    # Print out a message in case we were looking for a particular CVE, and
+    # we didn't find it for whatever reason.
+    if cmd_line.cve is not None and not found_cve:
+        print(
+            f"ERROR: Unable to locate CVE-{cmd_line.cve} in the provided"
+            'NVD files.'
+        )
 
 
 def parse_args():
@@ -184,6 +198,12 @@ def parse_args():
         '--prompt',
         action='store_true',
         help='Prompt after attempting to run an exploit end-to-end'
+    )
+    parser.add_argument(
+        '--cve',
+        type=str,
+        help='Only search for the specified CVE(s) of interest '
+        '(comma-separated)'
     )
     return parser.parse_args()
 
