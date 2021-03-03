@@ -20,7 +20,7 @@ def get_all_forms(url, session, log):
     log.debug(make_title('end of HTTP response'))
 
     # Return the forms generated from this response.
-    return soup.find_all("form")
+    return soup.find_all("form"), soup
 
 
 def get_form_details(form):

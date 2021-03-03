@@ -25,6 +25,10 @@ DBNAME = 'somedb'
 DBUSER = 'root'
 DBPASS = ''
 
+# Application admin credentials
+ADMINUSER = 'admin'
+ADMINPASS = 'admin'
+
 # Possible Var X Value (i.e. cartesian product) of possible configuration
 # replacements
 DBHOST_REPLACEMENTS = [['dbhost', 'hostname'], [DBHOST]]
