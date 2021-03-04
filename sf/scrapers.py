@@ -350,7 +350,7 @@ class SourceforgeScraper:
                     if self.prompt:
                         value = input("Continue scraping? (y/N)... ")
                         if value.lower() != 'y':
-                            quit()
+                            sys.exit(0)
 
                     return False
                 finally:
@@ -541,6 +541,7 @@ class SourceforgeScraper:
             success_outer = True
             try:
                 for product in products:
+                    success_inner = True
                     self.log.new_subtask(
                         'Searching sourceforge for codebase matching '
                         f"{vendors_str}:{product}"
@@ -549,6 +550,13 @@ class SourceforgeScraper:
                         success_inner = \
                                 self.scrape_and_run_exploit0(cve, vendors, product)
                         break
+                    # TODO: Re-implement me... This was to account for an odd
+                    #       corner-case and handle a sys.exit() gracefully. But
+                    #       I guess we really should not have to catch all
+                    #       exceptions, and instead we should just know ahead
+                    #       of time which exceptions can be thrown here...
+                    except SystemExit:
+                        raise
                     except StepFailedException:
                         # Don't log these since it's obvious from the
                         # output that a step failed
@@ -561,6 +569,13 @@ class SourceforgeScraper:
                             msg=f"Ending search of {vendors_str}:{product}",
                             success=success_inner
                         )
+            # TODO: Re-implement me... This was to account for an odd corner-
+            #       case and handle a sys.exit() gracefully. But I guess we
+            #       really should not have to catch all exceptions, and instead
+            #       we should just know ahead of time which exceptions can be
+            #       thrown here...
+            except SystemExit:
+                raise
             except StepFailedException:
                 # Don't log these since it's obvious from the output that a
                 # step failed
