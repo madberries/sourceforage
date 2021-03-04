@@ -500,7 +500,9 @@ class SourceforgeScraper:
 
                         # Find the codebase starting at the root directory
                         # listing.
-                        tmp_result = self.find_and_download_codebases(dir_listing)
+                        tmp_result = self.find_and_download_codebases(
+                            dir_listing
+                        )
                         if tmp_result:    # None is interpretted as False.
                             return True
                         # Now tmp_result here must be None or False

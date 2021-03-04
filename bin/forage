@@ -1,23 +1,22 @@
 #!/usr/bin/env python3
 #
-# usage: forage [-h] [-v] [-c] [-p] [--cve CVE] infiles [infiles ...]
+# usage: forage [-h] [-w] [-c] [-p] [--cve CVE] infiles [infiles ...]
 #
 # Discovers and generates PHP exploits automatically (via sourceforge) from NVD
 # json data feed
 #
 # positional arguments:
-#   infiles         compressed json file as downloaded from NVD's website, e.g.
-#                   https://nvd.nist.gov/feeds/json/cve/1.0/nvdcve-1.0-2018.json
-#                   .gz
+#   infiles        compressed json file as downloaded from NVD's website, e.g. h
+#                  ttps://nvd.nist.gov/feeds/json/cve/1.0/nvdcve-1.0-2018.json.g
+#                  z
 #
 # optional arguments:
-#   -h, --help      show this help message and exit
-#   -v, --verified  run only CVEs that have been verified to work end-to-end
-#   -c, --clean     clears the foraged directory and starts foraging from
-#                   scratch
-#   -p, --prompt    prompt after attempting to run an exploit end-to-end
-#   --cve CVE       only search for the specified CVE(s) of interest (comma-
-#                   separated)
+#   -h, --help     show this help message and exit
+#   -w, --working  run only CVEs that have been verified to work end-to-end
+#   -c, --clean    clears the foraged directory and starts foraging from scratch
+#   -p, --prompt   prompt after attempting to run an exploit end-to-end
+#   --cve CVE      only search for the specified CVE(s) of interest (comma-
+#                  separated)
 
 import os
 import sys
@@ -74,8 +73,9 @@ def write_cves_to_file(file_with_cves, cves):
             f.write(f"{cve}\n")
 
 
-def finish_up(cmd_line, missing_cves, vague_cves, cb_progress, cb_regress,
-              found_cve, log):
+def finish_up(
+    cmd_line, missing_cves, vague_cves, cb_progress, cb_regress, found_cve, log
+):
     # Print out a message in case we were looking for a particular CVE, and
     # we didn't find it for whatever reason.
     if cmd_line.cve is not None and not found_cve:
@@ -93,7 +93,10 @@ def finish_up(cmd_line, missing_cves, vague_cves, cb_progress, cb_regress,
     if len(cb_regress) > 0:
         # Add all of the CVEs that now have missing codebases (but didn't
         # before).
-        log.info(f"Codebases that weren't missing before, but are missing now: {cb_regress}")
+        log.info(
+            "Codebases that weren't missing before, but are missing now: " +
+            str(cb_regress)
+        )
         missing_cves = missing_cves.union(cb_regress)
 
     # Write back out the .not_found and .vague files.
@@ -113,9 +116,7 @@ def process_cve(cve, cmd_line, missing_cves, vague_cves, success_msg, log):
                 shutil.rmtree(cve_dir)
         else:
             succ_pattern = os.path.join(cve_pattern, '*/.success')
-            successful_cve_dirs = glob.glob(
-                succ_pattern, recursive=False
-            )
+            successful_cve_dirs = glob.glob(succ_pattern, recursive=False)
             num_successes = len(successful_cve_dirs)
             log.new_subtask(
                 f"Already foraged this CVE ({num_attempts}/{num_successes}"
@@ -133,24 +134,31 @@ def process_cve(cve, cmd_line, missing_cves, vague_cves, success_msg, log):
                     successful_cves_str = successful_cve_dirs[0]
                 else:
                     fmt_msg = 'Successful dockers:\n    %s'
-                    successful_cves_str = '\n    '.join(
-                        successful_cve_dirs
-                    )
+                    successful_cves_str = '\n    '.join(successful_cve_dirs)
                 log.info(fmt_msg % successful_cves_str)
             log.complete_subtask()
             return None
     elif cve.cve in missing_cves:
         if cmd_line.clean:
-            log.info(f'Codebase was not found for {cve.cve} on a previous run, but trying again...')
+            log.info(
+                f'Codebase was not found for {cve.cve} on a previous run, but'
+                'trying again...'
+            )
         else:
-            log.info(f'Skipping {cve.cve} since codebase was not found on a previous run')
+            log.info(
+                f'Skipping {cve.cve} since codebase was not found on a previous'
+                'run'
+            )
             return None
     elif cve.cve in vague_cves:
         # TODO: Once a --vague option has been implemented (for forcing
         #       a run on CVEs where no explicit vulnerable file is found
         #       in the CVE description) then we will need to add another
         #       case here...
-        log.info(f'Skipping {cve.cve} since no vulnerable file was found in the CVE description on a previous run')
+        log.info(
+            f'Skipping {cve.cve} since no vulnerable file was found in the CVE'
+            'description on a previous run'
+        )
         return None
 
     # If we are only running CVEs that have been verified to work
@@ -214,7 +222,7 @@ def main(cmd_line):
     # discovered in the description) since we may find this useful as well at
     # some point.
     missing_cves, not_found_file = load_cves_from_file('.not_found')
-    vague_cves, vague_file       = load_cves_from_file('.vague')
+    vague_cves, vague_file = load_cves_from_file('.vague')
 
     # Set of codebases that are newly discovered from the previous run.
     cb_progress = set()
@@ -238,34 +246,35 @@ def main(cmd_line):
             for cve_base in nvd_data['CVE_Items']:
                 cve = CVE(cve_base)
 
-                # Check to see if we are looking for a particular CVE, and skip all
-                # of the others.
+                # Check to see if we are looking for a particular CVE, and skip
+                # all of the others.
                 if cmd_line.cve is not None:
                     if cve.cve != 'CVE-' + cmd_line.cve:
                         continue
                     else:
                         found_cve = True
 
-                status = process_cve(cve, cmd_line, missing_cves, vague_cves,
-                                     success_msg, log)
+                status = process_cve(
+                    cve, cmd_line, missing_cves, vague_cves, success_msg, log
+                )
                 if status is None:
                     continue
 
-                # Depending on the result of the 'scraping' routine, we do one of
-                # the following:
+                # Depending on the result of the 'scraping' routine, we do one
+                # of the following:
                 if status is Status.CODEBASE_NOT_FOUND:
-                    # If the codebase for the current CVE was not previously marked
-                    # as missing, then count this as a regression (though it could
-                    # be the first attempt).
+                    # If the codebase for the current CVE was not previously
+                    # marked as missing, then count this as a regression (though
+                    # it could be the first attempt).
                     if cve.cve not in missing_cves:
                         cb_regress.add(cve.cve)
                 elif status is Status.VAGUE:
                     # Mark this CVE as vague.
                     vague_cves.add(cve.cve)
                 elif status is not Status.NO_INJECTION:
-                    # If the codebase for the current CVE was previously found but
-                    # now the scraper returns a PASS or FAIL status, then count
-                    # this as progress.
+                    # If the codebase for the current CVE was previously found
+                    # but now the scraper returns a PASS or FAIL status, then
+                    # count this as progress.
                     if cve.cve in missing_cves:
                         cb_progress.add(cve.cve)
         # TODO: Re-implement me... This was to account for an odd corner-
@@ -278,8 +287,15 @@ def main(cmd_line):
         except:
             log.log_exception(traceback.format_exc())
         finally:
-            finish_up(cmd_line, missing_cves, vague_cves, cb_progress,
-                      cb_regress, found_cve, log)
+            finish_up(
+                cmd_line,
+                missing_cves,
+                vague_cves,
+                cb_progress,
+                cb_regress,
+                found_cve,
+                log
+            )
             log.complete_task(success=True)
 
 
@@ -298,8 +314,8 @@ def parse_args():
         "https://nvd.nist.gov/feeds/json/cve/1.0/nvdcve-1.0-2018.json.gz"
     )
     parser.add_argument(
-        '-v',
-        '--verified',
+        '-w',
+        '--working',
         action='store_true',
         help='run only CVEs that have been verified to work end-to-end'
     )
