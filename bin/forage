@@ -142,12 +142,12 @@ def process_cve(cve, cmd_line, missing_cves, vague_cves, success_msg, log):
         if cmd_line.clean:
             log.info(
                 f'Codebase was not found for {cve.cve} on a previous run, but'
-                'trying again...'
+                ' trying again...'
             )
         else:
             log.info(
                 f'Skipping {cve.cve} since codebase was not found on a previous'
-                'run'
+                ' run'
             )
             return None
     elif cve.cve in vague_cves:
@@ -157,14 +157,14 @@ def process_cve(cve, cmd_line, missing_cves, vague_cves, success_msg, log):
         #       case here...
         log.info(
             f'Skipping {cve.cve} since no vulnerable file was found in the CVE'
-            'description on a previous run'
+            ' description on a previous run'
         )
         return None
 
     # If we are only running CVEs that have been verified to work
     # end-to-end, and this CVE is not one that has been verified
     # to work, then skip this CVE.
-    if cmd_line.verified and not cve.cve.lower() in \
+    if cmd_line.working and not cve.cve.lower() in \
             CAPABLE_OF_WORKING.keys():
         return None
 
@@ -177,7 +177,7 @@ def process_cve(cve, cmd_line, missing_cves, vague_cves, success_msg, log):
     # discover, generate, and run an exploit end-to-end).
     sourceforge_scraper = \
             SourceforgeScraper(cve, log, success_msg=success_msg,
-                               check_only_verified=cmd_line.verified,
+                               check_only_verified=cmd_line.working,
                                prompt=cmd_line.prompt)
     return sourceforge_scraper.scrape_and_run_exploit()
 
