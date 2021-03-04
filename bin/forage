@@ -27,7 +27,7 @@ import sys
 haccs_ta2_home = os.environ.get('HACCSTA2_HOME')
 if haccs_ta2_home is None:
     print(
-        'ERROR: HACCSTA2_HOME is not set (this should point to the root of '
+        'error: HACCSTA2_HOME is not set (this should point to the root of '
         'the \'haccs-ta2\' repo)',
         file=sys.stderr
     )
@@ -41,11 +41,137 @@ import gzip
 import json
 import shutil
 import signal
+import traceback
 
-from sf.scrapers import SourceforgeScraper
+from sf.scrapers import SourceforgeScraper, Status
 from sf.utils.constants import CAPABLE_OF_WORKING, FORAGED_OUT_DIR
 from sf.utils.file import read_all_lines
 from sf.utils.logging import ItemizedLogger
+
+
+def load_cves_from_file(file_with_cves):
+    full_path = os.path.join(FORAGED_OUT_DIR, file_with_cves)
+    if not os.path.exists(full_path):
+        cves = set()
+    else:
+        with open(full_path, 'r') as f:
+            cves = set([x.strip() for x in f.readlines()])
+    return cves, full_path
+
+
+def write_cves_to_file(file_with_cves, cves):
+    full_path = os.path.join(FORAGED_OUT_DIR, file_with_cves)
+    if len(cves) == 0:
+        # If there are no CVEs to write, and the file exists, then simply
+        # remove it.
+        if os.path.exists(full_path):
+            os.remove(full_path)
+        return
+    cves = sorted(cves)
+    # Write over existing file with the new CVEs.
+    with open(full_path, 'w') as f:
+        for cve in cves:
+            f.write(f"{cve}\n")
+
+
+def finish_up(cmd_line, missing_cves, vague_cves, cb_progress, cb_regress,
+              found_cve, log):
+    # Print out a message in case we were looking for a particular CVE, and
+    # we didn't find it for whatever reason.
+    if cmd_line.cve is not None and not found_cve:
+        log.error(
+            f"Unable to locate CVE-{cmd_line.cve} in the provided NVD files."
+        )
+
+    # Print out any progress or regressions found in the discovery of codebases
+    # and then update the missing_cves to reflect these new changes.
+    if len(cb_progress) > 0:
+        log.info(f'Newly discovered codebases: {cb_progress}')
+        # Remove all of the CVEs whose codebases are no longer missing from
+        # missing_cves.
+        missing_cves -= cb_progress
+    if len(cb_regress) > 0:
+        # Add all of the CVEs that now have missing codebases (but didn't
+        # before).
+        log.info(f"Codebases that weren't missing before, but are missing now: {cb_regress}")
+        missing_cves = missing_cves.union(cb_regress)
+
+    # Write back out the .not_found and .vague files.
+    write_cves_to_file('.not_found', missing_cves)
+    write_cves_to_file('.vague', vague_cves)
+
+
+def process_cve(cve, cmd_line, missing_cves, vague_cves, success_msg, log):
+    # Check to see if there was a previous run of this CVE.
+    cve_pattern = os.path.join(FORAGED_OUT_DIR, f"{cve.cve.lower()}_*")
+    matching_cve_dirs = glob.glob(cve_pattern, recursive=False)
+    num_attempts = len(matching_cve_dirs)
+    if num_attempts > 0:
+        if cmd_line.clean:
+            # Remove the previous run (since we are cleaning).
+            for cve_dir in matching_cve_dirs:
+                shutil.rmtree(cve_dir)
+        else:
+            succ_pattern = os.path.join(cve_pattern, '*/.success')
+            successful_cve_dirs = glob.glob(
+                succ_pattern, recursive=False
+            )
+            num_successes = len(successful_cve_dirs)
+            log.new_subtask(
+                f"Already foraged this CVE ({num_attempts}/{num_successes}"
+                ' runs succeeded)',
+                title=cve.cve
+            )
+            successful_cve_dirs = [
+                os.path.dirname(x) for x in successful_cve_dirs
+            ]
+            if num_successes == 0:
+                log.info('Successful dockers: <None>')
+            else:
+                if num_successes == 1:
+                    fmt_msg = 'Successful dockers: %s'
+                    successful_cves_str = successful_cve_dirs[0]
+                else:
+                    fmt_msg = 'Successful dockers:\n    %s'
+                    successful_cves_str = '\n    '.join(
+                        successful_cve_dirs
+                    )
+                log.info(fmt_msg % successful_cves_str)
+            log.complete_subtask()
+            return None
+    elif cve.cve in missing_cves:
+        if cmd_line.clean:
+            log.info(f'Codebase was not found for {cve.cve} on a previous run, but trying again...')
+        else:
+            log.info(f'Skipping {cve.cve} since codebase was not found on a previous run')
+            return None
+    elif cve.cve in vague_cves:
+        # TODO: Once a --vague option has been implemented (for forcing
+        #       a run on CVEs where no explicit vulnerable file is found
+        #       in the CVE description) then we will need to add another
+        #       case here...
+        log.info(f'Skipping {cve.cve} since no vulnerable file was found in the CVE description on a previous run')
+        return None
+
+    # If we are only running CVEs that have been verified to work
+    # end-to-end, and this CVE is not one that has been verified
+    # to work, then skip this CVE.
+    if cmd_line.verified and not cve.cve.lower() in \
+            CAPABLE_OF_WORKING.keys():
+        return None
+
+    # Make sure CPE information was found, so we can pull the version
+    # number easily from this.
+    if len(cve.cpe_list_flat) <= 0:
+        return None
+
+    # Scrape sourceforge for the vulnerable codebase (and potentially
+    # discover, generate, and run an exploit end-to-end).
+    sourceforge_scraper = \
+            SourceforgeScraper(cve, log, success_msg=success_msg,
+                               check_only_verified=cmd_line.verified,
+                               prompt=cmd_line.prompt)
+    return sourceforge_scraper.scrape_and_run_exploit()
 
 
 def main(cmd_line):
@@ -66,11 +192,11 @@ def main(cmd_line):
     # Block all signals for now, but may decide to include SIGINT at some point.
     signal.pthread_sigmask(signal.SIG_BLOCK, signal.valid_signals())
 
-    # This directory is commit, so it should be there obviously, but just in
-    # case...
+    # This directory is commited, so it should be there obviously but just in
+    # case it isn't...
     if not os.path.isdir(FORAGED_OUT_DIR):
         print(
-            'ERROR: \'%s\' does not exist or is not a directory!' %
+            'error: \'%s\' does not exist or is not a directory!' %
             FORAGED_OUT_DIR,
             file=sys.stderr
         )
@@ -79,92 +205,82 @@ def main(cmd_line):
     # Message that is printed upon a successful end-to-end exploit
     success_msg = read_all_lines('success.msg')
 
-    log = ItemizedLogger()
-
     # Only relevant if --cve flag was used
     found_cve = False
+
+    # Read in the list of CVEs whose codebases were not found, becuase we will
+    # skip these in the future (unless running with the --clean option).  Also
+    # load in 'vague' CVEs as well (i.e. CVEs where no vulnerable PHP file was
+    # discovered in the description) since we may find this useful as well at
+    # some point.
+    missing_cves, not_found_file = load_cves_from_file('.not_found')
+    vague_cves, vague_file       = load_cves_from_file('.vague')
+
+    # Set of codebases that are newly discovered from the previous run.
+    cb_progress = set()
+
+    # Set of codebases that were discovered prior, but are somehow not found.
+    cb_regress = set()
+
+    # Initialize the logger before proceeding
+    log = ItemizedLogger()
 
     # For each json file, parse the CVE items and determine whther this is a
     # queriable SQL injection.
     for nvd_data in nvd_inputs:
-        print(
-            "Have %d CVEs to process from %s" %
-            (len(nvd_data['CVE_Items']), nvd_data['filename'])
+        log.new_task(
+            "Have %d CVEs to process" % len(nvd_data['CVE_Items']),
+            title=nvd_data['filename']
         )
+        success = True
+        try:
+            # Process each CVE in the JSON file.
+            for cve_base in nvd_data['CVE_Items']:
+                cve = CVE(cve_base)
 
-        for cve_base in nvd_data['CVE_Items']:
-            cve = CVE(cve_base)
-
-            # Check to see if we are looking for a particular CVE.
-            if cmd_line.cve is not None:
-                if cve.cve != 'CVE-' + cmd_line.cve:
-                    continue
-                else:
-                    found_cve = True
-
-            # Check to see if there was a previous run of this CVE.
-            cve_pattern = os.path.join(FORAGED_OUT_DIR, f"{cve.cve.lower()}_*")
-            matching_cve_dirs = glob.glob(cve_pattern, recursive=False)
-            num_attempts = len(matching_cve_dirs)
-            if num_attempts > 0:
-                if cmd_line.clean:
-                    # Remove the previous run (since we are cleaning).
-                    for cve_dir in matching_cve_dirs:
-                        shutil.rmtree(cve_dir)
-                else:
-                    succ_pattern = os.path.join(cve_pattern, '*/.success')
-                    successful_cve_dirs = glob.glob(
-                        succ_pattern, recursive=False
-                    )
-                    num_successes = len(successful_cve_dirs)
-                    log.new_task(
-                        f"Already foraged this CVE ({num_attempts}/{num_successes}"
-                        ' runs succeeded)',
-                        title=cve.cve
-                    )
-                    successful_cve_dirs = [
-                        os.path.dirname(x) for x in successful_cve_dirs
-                    ]
-                    if num_successes == 0:
-                        log.info('Successful dockers: <None>')
+                # Check to see if we are looking for a particular CVE, and skip all
+                # of the others.
+                if cmd_line.cve is not None:
+                    if cve.cve != 'CVE-' + cmd_line.cve:
+                        continue
                     else:
-                        if num_successes == 1:
-                            fmt_msg = 'Successful dockers: %s'
-                            successful_cves_str = successful_cve_dirs[0]
-                        else:
-                            fmt_msg = 'Successful dockers:\n    %s'
-                            successful_cves_str = '\n    '.join(
-                                successful_cve_dirs
-                            )
-                        log.info(fmt_msg % successful_cves_str)
-                    log.complete_task()
+                        found_cve = True
+
+                status = process_cve(cve, cmd_line, missing_cves, vague_cves,
+                                     success_msg, log)
+                if status is None:
                     continue
 
-            # If we are only running CVEs that have been verified to work
-            # end-to-end, and this CVE is not one that has been verified
-            # to work, then skip this CVE.
-            if cmd_line.verified and not cve.cve.lower() in \
-                    CAPABLE_OF_WORKING.keys():
-                continue
-
-            # Make sure CPE information was found, so we can pull the version
-            # number easily from this.
-            if len(cve.cpe_list_flat) <= 0:
-                continue
-
-            sourceforge_scraper = \
-                    SourceforgeScraper(cve, log, success_msg=success_msg,
-                                       check_only_verified=cmd_line.verified,
-                                       prompt=cmd_line.prompt)
-            sourceforge_scraper.scrape_and_run_exploit()
-
-    # Print out a message in case we were looking for a particular CVE, and
-    # we didn't find it for whatever reason.
-    if cmd_line.cve is not None and not found_cve:
-        print(
-            f"ERROR: Unable to locate CVE-{cmd_line.cve} in the provided"
-            'NVD files.'
-        )
+                # Depending on the result of the 'scraping' routine, we do one of
+                # the following:
+                if status is Status.CODEBASE_NOT_FOUND:
+                    # If the codebase for the current CVE was not previously marked
+                    # as missing, then count this as a regression (though it could
+                    # be the first attempt).
+                    if cve.cve not in missing_cves:
+                        cb_regress.add(cve.cve)
+                elif status is Status.VAGUE:
+                    # Mark this CVE as vague.
+                    vague_cves.add(cve.cve)
+                elif status is not Status.NO_INJECTION:
+                    # If the codebase for the current CVE was previously found but
+                    # now the scraper returns a PASS or FAIL status, then count
+                    # this as progress.
+                    if cve.cve in missing_cves:
+                        cb_progress.add(cve.cve)
+        # TODO: Re-implement me... This was to account for an odd corner-
+        #       case and handle a sys.exit() gracefully. But I guess we
+        #       really should not have to catch all exceptions, and instead
+        #       we should just know ahead of time which exceptions can be
+        #       thrown here...
+        except SystemExit:
+            raise
+        except:
+            log.log_exception(traceback.format_exc())
+        finally:
+            finish_up(cmd_line, missing_cves, vague_cves, cb_progress,
+                      cb_regress, found_cve, log)
+            log.complete_task(success=True)
 
 
 def parse_args():

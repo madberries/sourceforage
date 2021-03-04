@@ -10,6 +10,7 @@ import urllib.parse
 
 from bs4 import BeautifulSoup
 from datetime import datetime
+from enum import Enum
 from fuzzywuzzy import fuzz
 from packaging import version
 from packaging.version import LegacyVersion
@@ -29,6 +30,14 @@ from .utils.process import run_cmd
 from .utils.string import border, contains_substr, pretty_print_dir_contents
 from .utils.zip import extract_archive, is_supported_archive_type, \
                        list_archive_contents
+
+
+class Status(Enum):
+    CODEBASE_NOT_FOUND = 1
+    NO_INJECTION = 2
+    VAGUE = 3
+    FAIL = 4
+    PASS = 5
 
 
 class SourceforgeScraper:
@@ -208,9 +217,13 @@ class SourceforgeScraper:
                 if found_vuln_file:
                     break
 
+            # TODO: Currently we only consider the first vulnerable file that
+            #       we find in the description, but we may way to individually
+            #       try analyzing each one (in case we fail to find the
+            #       vulnerability in the first vulnerable file).
             if not found_vuln_file:
                 self.log.fail('Unable to locate vulnerable file!')
-                return
+                return None
 
             # Make the CVE directory
             common_root = os.path.commonpath(contents_list)
@@ -364,8 +377,15 @@ class SourceforgeScraper:
         # it in a running docker container.
         return False
 
+    # Possible return values:
+    #  - None: No codebase was found
+    #  - False: Codebase found, but no exploit was generate (or failed to work end-to-end)
+    #  - True: Codebase was found and exploit worked end-to-end
     def find_and_download_codebases(self, dir_listing):
+        result = None
         folders, files = dir_listing
+
+        # First try the lower-hanging fruit (i.e. the files).
         for title, url in files.items():
             # Attempt to extract at least a partial version number
             p = re.compile('[^0-9\.]*([0-9]([0-9\.]*[0-9])?)[^0-9\.]*')
@@ -384,11 +404,16 @@ class SourceforgeScraper:
             for vers_range in self.valid_version_ranges:
                 if vers_range.check(pot_vers):
                     self.log.success(f"Matched version {pot_vers}, url=[{url}]")
-                    if self.download_codebase(
+                    tmp_result = self.download_codebase(
                         url, self.cpe_map[vers_range], True
-                    ):
+                    )
+                    if tmp_result:    # None is interpretted as False.
                         return True
+                    # Now tmp_result here must be None or False
+                    if result is None:
+                        result = tmp_result
 
+        # Then try the higher to reach fruit (i.e. the directories).
         for title, url in folders.items():
             try:
                 pot_vers = version.parse(title)
@@ -399,10 +424,14 @@ class SourceforgeScraper:
                         self.log.success(
                             f"Matched version {pot_vers}, url=[{url}]",
                         )
-                        if self.download_codebase(
+                        tmp_result = self.download_codebase(
                             url, self.cpe_map[vers_range], False
-                        ):
+                        )
+                        if tmp_result:    # None is interpretted as False.
                             return True
+                        # Now tmp_result here must be None or False
+                        if result is None:
+                            result = tmp_result
             except InvalidVersionFormat:
                 msg = f"Finding matching versions in directory '{title}', " \
                       f"where url={SOURCEFORGE_BASE_URL}/{url})..."
@@ -414,15 +443,17 @@ class SourceforgeScraper:
                     pretty_print_dir_contents(
                         dir_listing, print_func=print_func
                     )
-                    success = self.find_and_download_codebases(dir_listing)
+                    tmp_result = self.find_and_download_codebases(dir_listing)
+                    if tmp_result:    # None is interpretted as False.
+                        success = True
+                        return True
+                    # Now tmp_result here must be None or False
+                    if result is None:
+                        result = tmp_result
                 finally:
                     self.log.complete_subtask(success=success)
-                return success
 
-        # If we get here, then we were either unable to find a vulnerable
-        # codebase, or we were unable to gnerate/trigger an exploit for
-        # it.
-        return False
+        return result
 
     def scrape_and_run_exploit0(self, cve, vendors, product):
         # TODO: Maybe the vendor information can aid us in the search,
@@ -432,6 +463,7 @@ class SourceforgeScraper:
             cve.description, product
         )
 
+        result = None
         if name_to_search is not None:
             self.log.info(f"Searching for codebase '{name_to_search}'...")
             page = 1
@@ -444,6 +476,7 @@ class SourceforgeScraper:
                     break
                 k = 0
                 for key, value in results_map.items():
+
                     if fuzz.ratio(key, name_to_search) < 65:
                         self.log.fail(
                             f"Skipping project '{key}' due to fuzzy mismatch",
@@ -464,14 +497,24 @@ class SourceforgeScraper:
                         pretty_print_dir_contents(
                             dir_listing, print_func=print_func
                         )
-                        if self.find_and_download_codebases(dir_listing):
+
+                        # Find the codebase starting at the root directory
+                        # listing.
+                        tmp_result = self.find_and_download_codebases(dir_listing)
+                        if tmp_result:    # None is interpretted as False.
                             return True
+                        # Now tmp_result here must be None or False
+                        if result is None:
+                            result = tmp_result
+
+                        # Don't check more than five matching codebases for now
+                        # but we may want to make this configurable.
                         if k > 5:
                             self.log.warn('Skipping... Too many results!')
-                            return False
+                            return result
                         k = k + 1
                 page += 1
-        return False
+        return result
 
     def scrape_and_run_exploit(self):
         # Is an SQL injection possible?
@@ -482,6 +525,9 @@ class SourceforgeScraper:
         valid_version_ranges = self.valid_version_ranges
         cpe_map = self.cpe_map
 
+        # Verify that an SQL injection is possible.
+        # TODO: Should we also consider general CVEs with (i.e. where the
+        #       number is unspecified??)
         for cwe in cve.get_cwes():
             try:
                 idx = cwe.index('CWE-')
@@ -493,9 +539,12 @@ class SourceforgeScraper:
                 inj_possible = True
 
         if not inj_possible:
-            return
+            return Status.NO_INJECTION
 
-        if len(vuln_files) > 0:
+        # The injection was possible, but are there vulnerable files?
+        if len(vuln_files) == 0:
+            return Status.VAGUE
+        else:
             # An SQL injection is possible, and there is one or more
             # vulnerable PHP files found.
             vendors = set()
@@ -520,7 +569,7 @@ class SourceforgeScraper:
                 cpe_map[version_range] = cpe_info[0]
 
             ranges_str = ', '.join([str(x) for x in valid_version_ranges])
-            self.log.new_task(
+            self.log.new_subtask(
                 'Discovered plausible SQL injection attack vector'
                 ' affecting the following versions:\n\n' + ranges_str,
                 title=cve.cve
@@ -539,6 +588,7 @@ class SourceforgeScraper:
                 vendors_str = f"{{{vendors_str}}}"
 
             success_outer = True
+            result = None
             try:
                 for product in products:
                     success_inner = True
@@ -547,9 +597,15 @@ class SourceforgeScraper:
                         f"{vendors_str}:{product}"
                     )
                     try:
-                        success_inner = \
+                        tmp_result = \
                                 self.scrape_and_run_exploit0(cve, vendors, product)
-                        break
+                        if tmp_result:    # None is interpretted as False.
+                            success_inner = True
+                            result = True
+                            break
+                        # Now tmp_result here must be None or False
+                        if result is None:
+                            result = tmp_result
                     # TODO: Re-implement me... This was to account for an odd
                     #       corner-case and handle a sys.exit() gracefully. But
                     #       I guess we really should not have to catch all
@@ -584,4 +640,12 @@ class SourceforgeScraper:
                 success_outer = False
                 self.log.log_exception(traceback.format_exc())
             finally:
-                self.log.complete_task(success=success_outer)
+                self.log.complete_subtask(success=success_outer)
+
+            # Finally return the status of the completed run.
+            if result is None:
+                return Status.CODEBASE_NOT_FOUND
+            elif result:
+                return Status.PASS
+            else:
+                return Status.FAIL
