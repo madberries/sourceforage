@@ -9,18 +9,13 @@ if [[ $# != 1 ]]; then
   exit 1
 fi
 
-check_mountpt() {
-  mount_dir=$1
-  if [[ ! -d "$mount_dir" ]]; then
-    echo "ERROR: $mount_dir is not mounted!" 1>&2
-    exit 1
-  fi
-}
-check_mountpt /json_out
-check_mountpt /exploits
+if [[ ! -d /app ]]; then
+  echo "ERROR: /app (i.e. the dockerized app) is not mounted!" 1>&2
+  exit 1
+fi
 
 cve="$1"
-json="/json_out/egen-$cve.json"
+json="/app/output-egen.json"
 
 if [[ ! -f "$json" ]]; then
   echo "ERROR: json file does not exist: $json" 1>&2
@@ -58,8 +53,13 @@ if [ $num_of_exploits -gt 26 ]; then
   exit 1
 fi
 
-rm -rf /exploits/${cve}*
+# Remove any previous exploits that had previously been generated.
+rm -rf /app/exploit*
 
+# Builds a generated exploit.
+#
+# Input:    <path-to-exploit>
+# Returns:  0 on success, otherwise 1
 build_exploit() {
   exploit_dir=$1
   pushd $exploit_dir
@@ -81,15 +81,14 @@ build_exploit() {
 
 # Build all of the exploits that were generated
 if [[ $num_of_exploits == 1 ]]; then
-  mv /tmp/payload_php_* /exploits/$cve
-  build_exploit /exploits/$cve
+  mv /tmp/payload_php_* /app/exploit
+  build_exploit /app/exploit
   exit_code=$?
 else
-  i=97
+  i=1
   for exploit in $(ls -d /tmp/payload_php_*)
   do
-    char_val=$(printf "\x$(printf %x $i)");
-    exploit_dir="/exploits/${cve}${char_val}"
+    exploit_dir="/app/exploit${i}"
     mv $exploit $exploit_dir
     build_exploit $exploit_dir
     exit_code=$?

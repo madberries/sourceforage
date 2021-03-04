@@ -323,19 +323,14 @@ class SourceforgeScraper:
                         )
                         continue
 
-                    exploits_dir = os.path.join(
-                        SF_ROOT_DIR, 'comfortfuzz/exploits'
-                    )
-                    json_out_dir = os.path.join(
-                        SF_ROOT_DIR, 'comfortfuzz/json_out'
-                    )
+                    # If analysis was successful, then run comfortfuzz to
+                    # generate an exploit for the discovered vulnerability.
+                    volume_dir = os.path.abspath(new_cve_dir)
                     cmd = [
                         'docker',
                         'run',
                         '--volume',
-                        f"{exploits_dir}:/exploits",
-                        '--volume',
-                        f"{json_out_dir}:/json_out",
+                        f"{volume_dir}:/app",
                         '--rm',
                         '-it',
                         'comfortfuzz',
@@ -345,10 +340,10 @@ class SourceforgeScraper:
                     if not run_cmd(cmd, 'comfortfuzz', self.log):
                         continue
 
+                    # Run the exploit end-to-end.
                     webapp_path = os.path.join(
                         new_cve_dir, os.path.join('data', common_root)
                     )
-                    # Run the exploit end-to-end.
                     if run_exploit(cve_lower, webapp_path, self.log):
                         print(self.success_msg)
                         self.log.success('Sucessfully triggered exploit')
@@ -360,6 +355,11 @@ class SourceforgeScraper:
                     else:
                         self.log.fail('Failed to trigger exploit')
 
+                    # If we got this far (but somehow failed to get a working
+                    # exploit) and we should prompt the user before continuing,
+                    # then block here such that the user can determine the
+                    # source of the problem by manually running the exploit by
+                    # hand in a running docker (via the 'runexploit' command).
                     if self.prompt:
                         value = input("Continue scraping? (y/N)... ")
                         if value.lower() != 'y':

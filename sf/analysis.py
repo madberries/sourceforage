@@ -133,12 +133,9 @@ def run_gaaphp(root_dir, cve_dir, log, additional_args=[]):
         parsed_json = json.loads(all_json_lines)
         log.debug(json.dumps(parsed_json, indent=4))
 
-        # Copy over the analysis results to the JSON directory in comfortfuzz
-        # for comfortfuzz to generate an exploit from this.
-        copy_to_dir = os.path.join(SF_ROOT_DIR, 'comfortfuzz/json_out')
-        shutil.copyfile(
-            output_json, os.path.join(copy_to_dir, 'egen-%s.json' % cve_dir)
-        )
+        # Copy over the analysis results to the dockerized CVE directory.
+        copy_to_file = os.path.join(cve_dir, 'output-egen.json')
+        shutil.copyfile(output_json, copy_to_file)
     finally:
         # Set the CWD back to it's original path.
         log.debug(f"Resetting CWD back to '{old_cwd}'")
