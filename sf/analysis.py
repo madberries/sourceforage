@@ -45,8 +45,8 @@ def run_gaaphp(root_dir, cve_dir, log, additional_args=[]):
         # analyzing exists.
         if not Path(cve_dir).is_dir():
             log.error(
-                f"ERROR: CVE directory '{cve_dir}' either does not "
-                'exist or is not a directory!'
+                f"CVE directory '{cve_dir}' either does not exist or is not a "
+                'directory!'
             )
             return False
 
@@ -94,11 +94,10 @@ def run_gaaphp(root_dir, cve_dir, log, additional_args=[]):
                 out, _ = Popen(['python3', gaaphp_dir + '/sqlarity.py',
                     sqlarity_str], stdout=PIPE).communicate()
                 out = out.splitlines()
-                num_of_lines = len(out)
-                if num_of_lines != 1:
+                nlines = len(out)
+                if nlines != 1:
                     log.error(
-                        'ERROR: Unexpected size of output (num_of_lines '
-                        f"= {num_of_lines}) != 1!"
+                        f"Unexpected size of output (#_of_lines={nlines}) != 1!"
                     )
                     log.debug(make_title('start of sqlarity.py output'))
                     for line in out:
@@ -114,16 +113,16 @@ def run_gaaphp(root_dir, cve_dir, log, additional_args=[]):
             return False
 
         if not Path(output_json).is_file():
-            log.error('ERROR: No JSON output was generated!')
+            log.error('No JSON output was generated!')
 
         all_json_lines = ''
         with open(output_json) as f:
             lines = f.readlines()
             if len(lines) < 1:
-                log.error('ERROR: JSON output returned is empty!')
+                log.error('JSON output returned is empty!')
                 return False
             elif len(lines) == 1 and lines[0] == '[]':
-                log.error('ERROR: No vulnerability detected in JSON output!')
+                log.error('No vulnerability detected in JSON output!')
                 return false
             for line in lines:
                 all_json_lines += line

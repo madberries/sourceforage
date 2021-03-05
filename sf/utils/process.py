@@ -59,7 +59,7 @@ def run_cmd(cmd, cmd_msg, log, timeout=None, cwd=None):
         run_cmd_async(cmd, cmd_msg, log, timeout=timeout, cwd=cwd)
     )
     if returncode != 0:
-        log.error(f"ERROR: Unable to run {cmd_msg} [return_code={returncode}]")
+        log.error(f"Unable to run {cmd_msg} [return_code={returncode}]")
         return False
     return True
 

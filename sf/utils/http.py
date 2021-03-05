@@ -10,7 +10,10 @@ def get_all_forms(url, session, log):
 
     # Make sure the response was OK.
     if res.status_code != 200:
-        log.error(f"ERROR: {url} returned status code = " + page.status_code)
+        log.error(
+            f"HTTP GET request for {url} returned erroneous response code "
+            f"({page.status_code})"
+        )
         return None
 
     # Parse and pretty-print the HTML response.

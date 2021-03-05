@@ -30,10 +30,7 @@ def dockerize(root_dir, path_to_codebase, log, use_old_template=False):
 
         # Make sure the vulnerable file is where we are expecting it to be.
         if not Path(vuln_file).exists():
-            log.error(
-                f"ERROR: Vulnerable file '{vuln_file_path}' does not "
-                'exist!'
-            )
+            log.error(f"Vulnerable file '{vuln_file_path}' does not exist!")
             return False
 
         # Determine which template we should dockerize from.
@@ -46,8 +43,8 @@ def dockerize(root_dir, path_to_codebase, log, use_old_template=False):
         # Make sure the template directory can be located.
         if not Path(template_dir).is_dir():
             log.error(
-                f"ERROR: Template directory '{template_dir}' either "
-                'does not exist, or is not a directory!'
+                f"Template directory '{template_dir}' either does not exist, "
+                'or is not a directory!'
             )
             return False
 
@@ -55,7 +52,7 @@ def dockerize(root_dir, path_to_codebase, log, use_old_template=False):
         # already exist.
         cve_dir = cve.lower()
         if Path(cve_dir).exists():
-            log.error(f"ERROR: CVE directory '{cve_dir}' already exists!")
+            log.error(f"CVE directory '{cve_dir}' already exists!")
             return False
 
         data_dir = os.path.join(cve_dir, 'data')

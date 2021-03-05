@@ -10,7 +10,7 @@ if [[ $# != 1 ]]; then
 fi
 
 if [[ ! -d /app ]]; then
-  echo "ERROR: /app (i.e. the dockerized app) is not mounted!" 1>&2
+  echo "error: /app (i.e. the dockerized app) is not mounted!" 1>&2
   exit 1
 fi
 
@@ -18,14 +18,14 @@ cve="$1"
 json="/app/output-egen.json"
 
 if [[ ! -f "$json" ]]; then
-  echo "ERROR: json file does not exist: $json" 1>&2
+  echo "error: json file does not exist: $json" 1>&2
   exit 1
 fi
 
 # Remove old payloads
 rm -rf /tmp/payload_php_*
 if [[ $? != 0 ]]; then
-  echo "ERROR: unable to remove previous payloads!" 1>&2
+  echo "error: unable to remove previous payloads!" 1>&2
   exit 1
 fi
 
@@ -40,7 +40,7 @@ fi
 
 num_of_exploits=$(ls -d /tmp/payload_php_* | wc -l)
 if [[ $num_of_exploits == 0 ]]; then
-  echo "ERROR: no exploits found!" 1>&2
+  echo "error: no exploits found!" 1>&2
   popd ; popd
   exit 1
 fi
@@ -48,7 +48,7 @@ fi
 # I'm not going to handle more exploits than letters of the
 # alphabet (that's just CRAZY talk!)
 if [ $num_of_exploits -gt 26 ]; then
-  echo "ERROR: too many exploits ($num_of_exploits exploits)!" 1>&2
+  echo "error: too many exploits ($num_of_exploits exploits)!" 1>&2
   popd ; popd
   exit 1
 fi
@@ -65,13 +65,13 @@ build_exploit() {
   pushd $exploit_dir
   cmake .
   if [[ $? != 0 ]]; then
-    echo "ERROR: failed to run cmake" 1>&2
+    echo "error: failed to run cmake" 1>&2
     popd
     return 1
   fi
   make
   if [[ $? != 0 ]]; then
-    echo "ERROR: failed to run make" 1>&2
+    echo "error: failed to run make" 1>&2
     popd
     return 1
   fi
