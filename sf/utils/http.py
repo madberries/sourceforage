@@ -14,7 +14,7 @@ def get_all_forms(url, session, log):
         return None
 
     # Parse and pretty-print the HTML response.
-    soup = BeautifulSoup(res.html.html, "html.parser")
+    soup = BeautifulSoup(res.html.html, "html5lib")
     log.debug(make_title('start of HTTP response'))
     log.debug(soup.prettify())
     log.debug(make_title('end of HTTP response'))
