@@ -113,19 +113,22 @@ def run_gaaphp(root_dir, cve_dir, log, additional_args=[]):
             return False
 
         if not Path(output_json).is_file():
-            log.error('No JSON output was generated!')
+            log.error('No JSON output file was generated!')
+            return False
 
         all_json_lines = ''
         with open(output_json) as f:
             lines = f.readlines()
-            if len(lines) < 1:
-                log.error('JSON output returned is empty!')
+            if len(lines) == 0:
+                log.error('JSON output file is empty!')
                 return False
-            elif len(lines) == 1 and lines[0] == '[]':
-                log.error('No vulnerability detected in JSON output!')
-                return false
             for line in lines:
                 all_json_lines += line
+
+        # Make sure there actually is a vulnerability in the JSON output.
+        if all_json_lines.strip() == '[]':
+            log.error('No vulnerability detected in JSON output!')
+            return False
 
         # Dump out the JSON vulnerability.
         log.debug('Vulnerability sucessfully detected:')

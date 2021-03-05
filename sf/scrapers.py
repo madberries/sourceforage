@@ -318,7 +318,7 @@ class SourceforgeScraper:
                     # Run gaaphp analysis.
                     if not run_gaaphp(cve_dir, new_cve_dirname, self.log):
                         self.log.error(
-                            'error: Unable to analyze codebase for '
+                            'Unable to analyze codebase for '
                             f"'{new_cve_dirname}'"
                         )
                         continue
