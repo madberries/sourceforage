@@ -42,7 +42,7 @@ import shutil
 import signal
 import traceback
 
-from sf.scrapers import SourceforgeScraper, Status
+from sf.scraper import SourceforgeScraper, Status
 from sf.utils.constants import CAPABLE_OF_WORKING, FORAGED_OUT_DIR
 from sf.utils.file import read_all_lines
 from sf.utils.logging import ItemizedLogger, StepFailedException

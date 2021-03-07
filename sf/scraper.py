@@ -19,9 +19,9 @@ from urllib.parse import urljoin
 
 from .analysis import run_gaaphp
 from .dockerizer import dockerize
-from .exploit_runner import run_exploit
-from .versions import VersionCondition, InvalidVersionFormat, \
-                      compute_version_range
+from .exploit import run_exploit
+from .version import VersionCondition, InvalidVersionFormat, \
+                     compute_version_range
 from .utils.constants import CAPABLE_OF_WORKING, FORAGED_OUT_DIR, \
                              SF_ROOT_DIR, SOURCEFORGE_BASE_URL
 from .utils.file import get_filename_from_download_url, without_ext
