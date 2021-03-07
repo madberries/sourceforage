@@ -28,8 +28,12 @@ async def run_cmd_async(cmd, cmd_msg, log, timeout=None, cwd=None):
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT
     )
+    log.log(
+        '--------------------------- cmd output ---------------------------',
+        text_color=EXEC_COLOR
+    )
 
-    # Read line (sequence of bytes ending with b'\n') asynchronously
+    # Read line (sequence of bytes ending with b'\n') asynchronously.
     while True:
         try:
             line = await asyncio.wait_for(p.stdout.readline(), timeout)
@@ -39,7 +43,11 @@ async def run_cmd_async(cmd, cmd_msg, log, timeout=None, cwd=None):
             if not line:    # EOF
                 break
             else:
-                os.write(sys.stdout.fileno(), line)
+                log.log(
+                    str(line, 'utf-8').strip(),
+                    text_color=EXEC_COLOR,
+                    end='\r\n'
+                )
                 continue    # While some criterium is satisfied
         p.kill()    # Timeout or some criterion is not satisfied
         break
@@ -57,6 +65,10 @@ def run_cmd(cmd, cmd_msg, log, timeout=None, cwd=None):
     # Check the return code and either True (on success) or False (on failure)
     returncode = loop.run_until_complete(
         run_cmd_async(cmd, cmd_msg, log, timeout=timeout, cwd=cwd)
+    )
+    log.log(
+        '--------------------------- end output ---------------------------',
+        text_color=EXEC_COLOR
     )
     if returncode != 0:
         log.error(f"Unable to run {cmd_msg} [return_code={returncode}]")

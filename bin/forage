@@ -45,7 +45,7 @@ import traceback
 from sf.scrapers import SourceforgeScraper, Status
 from sf.utils.constants import CAPABLE_OF_WORKING, FORAGED_OUT_DIR
 from sf.utils.file import read_all_lines
-from sf.utils.logging import ItemizedLogger
+from sf.utils.logging import ItemizedLogger, StepFailedException
 
 
 def load_cves_from_file(file_with_cves):
@@ -79,9 +79,15 @@ def finish_up(
     # Print out a message in case we were looking for a particular CVE, and
     # we didn't find it for whatever reason.
     if cmd_line.cve is not None and not found_cve:
-        log.error(
-            f"Unable to locate CVE-{cmd_line.cve} in the provided NVD files."
-        )
+        try:
+            log.hard_fail(
+                f"Unable to locate CVE-{cmd_line.cve} in the provided NVD "
+                'files.'
+            )
+        except StepFailedException:
+            # We only want to consider these a hard failure, but still finish
+            # the clean-up routine!
+            pass
 
     # Print out any progress or regressions found in the discovery of codebases
     # and then update the missing_cves to reflect these new changes.
@@ -118,25 +124,37 @@ def process_cve(cve, cmd_line, missing_cves, vague_cves, success_msg, log):
             succ_pattern = os.path.join(cve_pattern, '*/.success')
             successful_cve_dirs = glob.glob(succ_pattern, recursive=False)
             num_successes = len(successful_cve_dirs)
-            log.new_subtask(
+            log.new_substep(
                 f"Already foraged this CVE ({num_attempts}/{num_successes}"
                 ' runs succeeded)',
-                title=cve.cve
+                caption=cve.cve
             )
-            successful_cve_dirs = [
-                os.path.dirname(x) for x in successful_cve_dirs
-            ]
-            if num_successes == 0:
-                log.info('Successful dockers: <None>')
-            else:
-                if num_successes == 1:
-                    fmt_msg = 'Successful dockers: %s'
-                    successful_cves_str = successful_cve_dirs[0]
+            try:
+                successful_cve_dirs = [
+                    os.path.dirname(x) for x in successful_cve_dirs
+                ]
+                if num_successes == 0:
+                    log.info('Successful dockers: <None>')
                 else:
-                    fmt_msg = 'Successful dockers:\n    %s'
-                    successful_cves_str = '\n    '.join(successful_cve_dirs)
-                log.info(fmt_msg % successful_cves_str)
-            log.complete_subtask()
+                    if num_successes == 1:
+                        fmt_msg = 'Successful dockers: %s'
+                        successful_cves_str = successful_cve_dirs[0]
+                    else:
+                        fmt_msg = 'Successful dockers:\n    %s'
+                        successful_cves_str = '\n    '.join(successful_cve_dirs)
+                    log.info(fmt_msg % successful_cves_str)
+            # TODO: Re-implement me... This was to account for an odd corner-
+            #       case and handle a sys.exit() gracefully. But I guess we
+            #       really should not have to catch all exceptions, and instead
+            #       we should just know ahead of time which exceptions can be
+            #       thrown here...
+            except SystemExit:
+                raise
+            except:
+                # Not expecting a StepFailedException here!
+                log.log_exception(traceback.format_exc())
+            finally:
+                log.complete_substep()
             return None
     elif cve.cve in missing_cves:
         if cmd_line.clean:
@@ -236,11 +254,11 @@ def main(cmd_line):
     # For each json file, parse the CVE items and determine whther this is a
     # queriable SQL injection.
     for nvd_data in nvd_inputs:
-        log.new_task(
+        log.new_substep(
             "Have %d CVEs to process" % len(nvd_data['CVE_Items']),
-            title=nvd_data['filename']
+            title=nvd_data['filename'],
+            caption='CVE Search'
         )
-        success = True
         try:
             # Process each CVE in the JSON file.
             for cve_base in nvd_data['CVE_Items']:
@@ -285,6 +303,7 @@ def main(cmd_line):
         except SystemExit:
             raise
         except:
+            # Not expecting a StepFailedException here!
             log.log_exception(traceback.format_exc())
         finally:
             finish_up(
@@ -296,7 +315,7 @@ def main(cmd_line):
                 found_cve,
                 log
             )
-            log.complete_task(success=True)
+            log.complete_substep()
 
 
 def parse_args():

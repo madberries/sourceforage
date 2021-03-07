@@ -186,9 +186,10 @@ class SourceforgeScraper:
 
             # Make sure that we support this archive type extension
             if not is_supported_archive_type(filename):
-                self.log.warn(
-                    'Skipping... File extension not supported for'
-                    f"file: {filename}"
+                self.log.fail(
+                    'Skipping... File extension not supported for file: ' +
+                    filename,
+                    soft=True
                 )
                 continue
 
@@ -283,8 +284,10 @@ class SourceforgeScraper:
                 if options is None:
                     options = '<Default>'
 
-                self.log.new_subtask(f"Running gaaphp with options: {options}")
-                success = False
+                self.log.new_substep(
+                    f"Running gaaphp with options: {options}",
+                    caption='analysis'
+                )
                 try:
                     # Dockerize this codebase.
                     use_old_template = reg_globals or not new_template
@@ -294,12 +297,11 @@ class SourceforgeScraper:
                         self.log,
                         use_old_template=use_old_template
                     ):
-                        self.log.error(
+                        self.log.hard_fail(
                             f"Unable to docker codebase for {cve_lower}"
                         )
-                        continue
 
-                    # Move the CVE docker to a new directory so that we don't
+                    # Move the CVE docker into a new directory so that we don't
                     # overwrite each consecutive run.
                     if new_template:
                         opts_str = 'n'
@@ -317,11 +319,10 @@ class SourceforgeScraper:
 
                     # Run gaaphp analysis.
                     if not run_gaaphp(cve_dir, new_cve_dirname, self.log):
-                        self.log.error(
+                        self.log.hard_fail(
                             'Unable to analyze codebase for '
                             f"'{new_cve_dirname}'"
                         )
-                        continue
 
                     # If analysis was successful, then run comfortfuzz to
                     # generate an exploit for the discovered vulnerability.
@@ -338,7 +339,10 @@ class SourceforgeScraper:
                         new_cve_dirname
                     ]
                     if not run_cmd(cmd, 'comfortfuzz', self.log):
-                        continue
+                        self.log.hard_fail(
+                            'Unable to run comfortfuzz on discovered '
+                            'vulnerability'
+                        )
 
                     # Run the exploit end-to-end.
                     webapp_path = os.path.join(
@@ -347,13 +351,12 @@ class SourceforgeScraper:
                     if run_exploit(cve_lower, webapp_path, self.log):
                         print(self.success_msg)
                         self.log.success('Sucessfully triggered exploit')
-                        success = True
                         # Mark this in the FS so that we can easily query the
                         # successes at a later date
                         Path(new_cve_dir, '.success').touch()
                         return True
                     else:
-                        self.log.fail('Failed to trigger exploit')
+                        self.log.soft_fail('Failed to trigger exploit')
 
                     # If we got this far (but somehow failed to get a working
                     # exploit) and we should prompt the user before continuing,
@@ -366,8 +369,21 @@ class SourceforgeScraper:
                             sys.exit(0)
 
                     return False
+                # TODO: Re-implement me... This was to account for an odd corner-
+                #       case and handle a sys.exit() gracefully. But I guess we
+                #       really should not have to catch all exceptions, and instead
+                #       we should just know ahead of time which exceptions can be
+                #       thrown here...
+                except SystemExit:
+                    raise
+                except StepFailedException:
+                    # Don't re-raise the exception, since we only want to fail
+                    # across this substep
+                    pass
+                except:
+                    self.log.log_exception(traceback.format_exc())
                 finally:
-                    self.log.complete_subtask(success=success)
+                    self.log.complete_substep()
 
             # Assume that the rest of the downloads are various compressed
             # formats of the same codebase
@@ -435,23 +451,52 @@ class SourceforgeScraper:
             except InvalidVersionFormat:
                 msg = f"Finding matching versions in directory '{title}', " \
                       f"where url={SOURCEFORGE_BASE_URL}/{url})..."
-                self.log.new_subtask(msg)
-                success = False
+                self.log.new_substep(msg, caption=title)
                 try:
+                    # Log the directory listing of the current working
+                    # directory on sourceforge.
                     dir_listing = SourceforgeScraper.get_codebase_listing(url)
                     print_func = lambda x: self.log.info(x)
                     pretty_print_dir_contents(
                         dir_listing, print_func=print_func
                     )
+
+                    # Recursively search the directory tree.
                     tmp_result = self.find_and_download_codebases(dir_listing)
                     if tmp_result:    # None is interpretted as False.
-                        success = True
+                        self.log.success(
+                            f"Triggered working exploit for '{title}'"
+                        )
                         return True
+                    else:
+                        if tmp_result is None:
+                            fail_msg = f"No codebase found in '{title}' " \
+                                        'directory'
+                        else:
+                            fail_msg = 'Failed to trigger exploit for a ' \
+                                       f"codebase discovered in '{title}' " \
+                                       'directory'
+                        self.log.soft_fail(fail_msg)
                     # Now tmp_result here must be None or False
                     if result is None:
                         result = tmp_result
+                # TODO: Re-implement me... This was to account for an odd corner-
+                #       case and handle a sys.exit() gracefully. But I guess we
+                #       really should not have to catch all exceptions, and instead
+                #       we should just know ahead of time which exceptions can be
+                #       thrown here...
+                except SystemExit:
+                    raise
+                except StepFailedException:
+                    # Don't re-raise the exception, since we only want to fail
+                    # across this substep
+                    pass
+                except:
+                    self.log.log_exception(traceback.format_exc())
                 finally:
-                    self.log.complete_subtask(success=success)
+                    self.log.complete_substep(
+                        msg=f"Finished searching '{title}' directory"
+                    )
 
         return result
 
@@ -465,9 +510,12 @@ class SourceforgeScraper:
 
         result = None
         if name_to_search is not None:
-            self.log.info(f"Searching for codebase '{name_to_search}'...")
             page = 1
             while True:
+                self.log.info(
+                    f"Searching for codebase '{name_to_search}' on page {page}"
+                    '...'
+                )
                 results_map = SourceforgeScraper.find_codebase(
                     name_to_search, page
                 )
@@ -476,30 +524,34 @@ class SourceforgeScraper:
                     break
                 k = 0
                 for key, value in results_map.items():
-
                     if fuzz.ratio(key, name_to_search) < 65:
-                        self.log.fail(
-                            f"Skipping project '{key}' due to fuzzy mismatch",
+                        self.log.soft_fail(
+                            f"Skipping project '{key}' due to fuzzy mismatch"
                         )
                     else:
                         self.log.success(
                             f"Found potential (fuzzy) match: '{key}' ~ "
                             f"'{name_to_search}'",
                         )
-                        dir_listing = SourceforgeScraper.get_codebase_listing(
-                            os.path.join(value, 'files')
-                        )
+
+                        # Get the root directory listing for the current
+                        # codebase.
                         self.log.info(
                             'Getting the directory listing for '
                             f"{SOURCEFORGE_BASE_URL}{value}..."
                         )
+                        dir_listing = SourceforgeScraper.get_codebase_listing(
+                            os.path.join(value, 'files')
+                        )
+
+                        # Log the directory listing for the root of the
+                        # codebase.
                         print_func = lambda x: self.log.info(x)
                         pretty_print_dir_contents(
                             dir_listing, print_func=print_func
                         )
 
-                        # Find the codebase starting at the root directory
-                        # listing.
+                        # Find the codebase starting at the root directory.
                         tmp_result = self.find_and_download_codebases(
                             dir_listing
                         )
@@ -570,41 +622,54 @@ class SourceforgeScraper:
                 valid_version_ranges.append(version_range)
                 cpe_map[version_range] = cpe_info[0]
 
+            # Start a new subtask for this search.
             ranges_str = ', '.join([str(x) for x in valid_version_ranges])
-            self.log.new_subtask(
+            self.log.new_substep(
                 'Discovered plausible SQL injection attack vector'
                 ' affecting the following versions:\n\n' + ranges_str,
-                title=cve.cve
+                caption=cve.cve
             )
 
-            # Print out the CPE map (in case it's useful).
-            self.log.debug('CPE map:\n--------\n')
-            self.log.debug(
-                '\n'.join([f"{x[0]}: {x[1]}" for x in cpe_map.items()])
-            )
-
-            if len(vendors) == 1:
-                vendors_str = vendors.pop()
-            else:
-                vendors_str = ','.join(vendors)
-                vendors_str = f"{{{vendors_str}}}"
-
-            success_outer = True
             result = None
             try:
+                # Print out the CPE map (in case it's useful).
+                self.log.debug('CPE map:')
+                self.log.debug('--------')
+                for key, val in cpe_map.items():
+                    self.log.debug(f"{key}: {val}")
+
+                if len(vendors) == 1:
+                    vendors_str = vendors.pop()
+                else:
+                    vendors_str = ','.join(vendors)
+                    vendors_str = f"{{{vendors_str}}}"
+
+                # Iterate through each potential product string to query for.
                 for product in products:
-                    success_inner = True
-                    self.log.new_subtask(
+                    self.log.new_substep(
                         'Searching sourceforge for codebase matching '
-                        f"{vendors_str}:{product}"
+                        f"{vendors_str}:{product}",
+                        caption=product
                     )
                     try:
                         tmp_result = \
                                 self.scrape_and_run_exploit0(cve, vendors, product)
                         if tmp_result:    # None is interpretted as False.
-                            success_inner = True
                             result = True
+                            self.log.success(
+                                'Successfully triggered exploit '
+                                'for vulnerable codebase '
+                                'discovered for %s:%s' % (vendors_str, product)
+                            )
                             break
+                        else:
+                            if tmp_result is None:
+                                fail_msg = 'No codebase found matching '
+                            else:
+                                fail_msg = 'Failed to trigger exploit for a ' \
+                                           'codebase matching '
+                            fail_msg += f'{vendors_str}:{product}'
+                            self.log.soft_fail(fail_msg)
                         # Now tmp_result here must be None or False
                         if result is None:
                             result = tmp_result
@@ -616,17 +681,31 @@ class SourceforgeScraper:
                     except SystemExit:
                         raise
                     except StepFailedException:
-                        # Don't log these since it's obvious from the
-                        # output that a step failed
-                        success_inner = False
+                        # Don't re-raise the exception, since we only want to
+                        # fail across this substep
+                        pass
                     except:
-                        success_inner = False
                         self.log.log_exception(traceback.format_exc())
                     finally:
-                        self.log.complete_subtask(
-                            msg=f"Ending search of {vendors_str}:{product}",
-                            success=success_inner
+                        self.log.complete_substep(
+                            msg=f"Ending search of {vendors_str}:{product}"
                         )
+
+                # Go through the final result, and
+                if result:
+                    # Good to go!
+                    self.log.success(
+                        'Successfully triggered an exploit for ' + cve.cve
+                    )
+                else:
+                    if result is None:
+                        fail_msg = 'Failed to discover codebase for '
+                    else:
+                        fail_msg = 'Discovered codebase, but failed to ' \
+                                   'trigger working exploit for '
+                    fail_msg += cve.cve
+                    self.log.hard_fail(fail_msg)
+
             # TODO: Re-implement me... This was to account for an odd corner-
             #       case and handle a sys.exit() gracefully. But I guess we
             #       really should not have to catch all exceptions, and instead
@@ -635,14 +714,15 @@ class SourceforgeScraper:
             except SystemExit:
                 raise
             except StepFailedException:
-                # Don't log these since it's obvious from the output that a
-                # step failed
-                success_outer = False
+                # Don't re-raise the exception, since we only want to fail
+                # across this substep
+                pass
             except:
-                success_outer = False
                 self.log.log_exception(traceback.format_exc())
             finally:
-                self.log.complete_subtask(success=success_outer)
+                self.log.complete_substep(
+                    msg='Finished searching for codebases for ' + cve.cve
+                )
 
             # Finally return the status of the completed run.
             if result is None:
