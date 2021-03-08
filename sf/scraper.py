@@ -186,10 +186,9 @@ class SourceforgeScraper:
 
             # Make sure that we support this archive type extension
             if not is_supported_archive_type(filename):
-                self.log.fail(
+                self.log.soft_fail(
                     'Skipping... File extension not supported for file: ' +
-                    filename,
-                    soft=True
+                    filename
                 )
                 continue
 
@@ -223,7 +222,11 @@ class SourceforgeScraper:
             #       try analyzing each one (in case we fail to find the
             #       vulnerability in the first vulnerable file).
             if not found_vuln_file:
-                self.log.fail('Unable to locate vulnerable file!')
+                # I guess we can't presume that the other archives found in the
+                # same directory can't be the codebase with the vulnerable file,
+                # and so only soft fail here to continue checking within the
+                # same directory
+                self.log.soft_fail('Unable to locate vulnerable file!')
                 return None
 
             # Make the CVE directory

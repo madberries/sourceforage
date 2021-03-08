@@ -61,16 +61,25 @@ def sed(pattern, replace, source, dest=None, count=0):
 
 
 def make_replacements(replacement_list, config_file, log):
-    for varname, value in itertools.product(*replacement_list):
-        if sed(
-            r'(^\$' + varname + '\s*=\s*("|\'))[^"]+(("|\')\s*;.*$)',
-            r'\1' + value + r'\3',
-            config_file,
-            count=1
-        ):
+    for varname, value_to_replace in itertools.product(*replacement_list):
+        # If it's a a tuple, the the first element is the value to replace,
+        # and the second element is the value to match.
+        if type(value_to_replace) is tuple:
+            value_to_replace, value_to_match = value_to_replace
+            single_qmatch = double_qmatch = value_to_match
+        else:
+            single_qmatch = r"[^']*"
+            double_qmatch = r'[^"]*'
+        pattern = rf'^\$({varname})\s*=\s*(\'({single_qmatch})\'|"({double_qmatch})"(.*$))'
+        ngroups = re.compile(pattern).groups
+        replace = rf'$\1 = "{value_to_replace}"\{ngroups}'
+        log.debug(
+            f"Attempting to match '{pattern}' and replace with '{replace}'..."
+        )
+        if sed(pattern, replace, config_file, count=1):
             log.debug(
                 f"Successfully replaced variable ${varname} with the value "
-                f"\"{value}\""
+                f"\"{value_to_replace}\""
             )
             return True
     return False

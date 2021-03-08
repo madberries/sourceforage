@@ -27,12 +27,40 @@ DBPASS = ''
 ADMINUSER = 'admin'
 ADMINPASS = 'admin'
 
+# Common Regexes:
+MYSQL_REGEX = r'(mysql|db|d(ata)base)?'
+HOST_REGEX = r'(host(_?)(name)?)|address'
+USER_REGEX = r'user(_?)(name)?'
+PASS_REGEX = r'pass(word)?'
+DBNAME_REGEX = r'(d(ata)base|(?!(user|host))name)'
+
 # Possible Var X Value (i.e. cartesian product) of possible configuration
 # replacements
-DBHOST_REPLACEMENTS = [['dbhost', 'hostname'], [DBHOST]]
-DBNAME_REPLACEMENTS = [['dbname', 'default_db', 'database'], [DBNAME]]
-DBUSER_REPLACEMENTS = [['dbuser', 'dbusername'], [DBUSER]]
-DBPASS_REPLACEMENTS = [['dbpass', 'dbpassword'], [DBPASS]]
+DBHOST_REPLACEMENTS = [
+    [rf'{MYSQL_REGEX}(_?){HOST_REGEX}', HOST_REGEX],
+    [DBHOST]
+]  # yapf: disable
+DBUSER_REPLACEMENTS = [
+    [rf'{MYSQL_REGEX}(_?){USER_REGEX}', USER_REGEX],
+    [DBUSER]
+]  # yapf: disable
+DBNAME_REPLACEMENTS = [
+    [rf'{MYSQL_REGEX}(_?){DBNAME_REGEX}', r'default_db|(d(ata)base)'],
+    [DBNAME]
+]  # yapf: disable
+DBPASS_REPLACEMENTS = [
+    [rf'{MYSQL_REGEX}(_?){PASS_REGEX}', PASS_REGEX],
+    [DBPASS]
+]  # yapf: disable
+# Consider the case where the url ends with a forward slash as well as
+# the case without it, since the app might not properly check for this.
+DBROOT_REPLACEMENTS = [
+    ['([a-zA-Z_\x80-\xff][a-zA-Z0-9_\x80-\xff]*)?(_(path|root))'],
+    [
+        (r'\7/', '(http://localhost)/[^/]+/'),
+        (r'\7', '(http://localhost)/[^/]+')
+    ]
+]  # yapf: disable
 
 # Default HTTP server configuration
 HTTP_SERVER_ADDR = '172.17.0.1'
