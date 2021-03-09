@@ -134,16 +134,22 @@ class SourceforgeScraper:
 
     @staticmethod
     def get_codebase_file_listing(rel_path):
-        _, files = \
+        dir_listing = \
                 SourceforgeScraper.get_codebase_listing(rel_path,
                                                         listing_type="file")
+        if dir_listing is None:
+            return None
+        _, files = dir_listing
         return files
 
     @staticmethod
     def get_codebase_dir_listing(rel_path):
-        folders, _ = \
+        dir_listing = \
                 SourceforgeScraper.get_codebase_listing(rel_path,
                                                         listing_type='folder')
+        if dir_listing is None:
+            return None
+        folders, _ = dir_listing
         return folders
 
     @staticmethod
@@ -158,6 +164,8 @@ class SourceforgeScraper:
 
         url = urljoin(SOURCEFORGE_BASE_URL, rel_path)
         page = requests.get(url)
+        if page.status_code != 200:
+            return None
         contents = page.content
         soup = BeautifulSoup(contents, 'html.parser')
 
@@ -180,6 +188,10 @@ class SourceforgeScraper:
             items = [('N/A', url)]
         else:
             items = SourceforgeScraper.get_codebase_file_listing(url).items()
+            if items is None:
+                # Only soft fail such that we continue our search.
+                self.log.soft_fail(f'Broken link: {url}')
+                return None
 
         # Iterate through each file listing to download
         for _, download_url in items:
@@ -463,6 +475,9 @@ class SourceforgeScraper:
                     # Log the directory listing of the current working
                     # directory on sourceforge.
                     dir_listing = SourceforgeScraper.get_codebase_listing(url)
+                    if dir_listing is None:
+                        self.log.hard_fail(f'Broken link: {url}')
+
                     print_func = lambda x: self.log.info(x)
                     pretty_print_dir_contents(
                         dir_listing, print_func=print_func
@@ -508,6 +523,38 @@ class SourceforgeScraper:
         return result
 
     def scrape_and_run_exploit0(self, cve, vendors, product):
+        # Construct a list of (perhaps likely) candidates with the hope of
+        # obviating the need for a full search.
+        print_func = lambda x: self.log.info(x)
+        feeling_lucky = [ os.path.join('projects', product) ]
+        if contains_substr(product, '-', ignore_case=False) > 0:
+            feeling_lucky.append(feeling_lucky[0].replace('-', '_'))
+        if contains_substr(product, '_', ignore_case=False) > 0:
+            feeling_lucky.append(feeling_lucky[0].replace('_', '-'))
+
+        # Try all of the potential project roots that seem like likely
+        # candidates, and if the page exists then attempt to scrape
+        # those projects.
+        result = None
+        for lucky_project in feeling_lucky:
+            self.log.info('Feeling lucky... Attempting to get directory listing'
+                          f' for {SOURCEFORGE_BASE_URL}{lucky_project}...')
+            dir_listing = SourceforgeScraper.get_codebase_listing(
+                os.path.join(lucky_project, 'files'))
+            if dir_listing is None:
+                self.log.info(
+                    f"Project '{lucky_project}' not found!  Oh well, we tried."
+                )
+                continue
+            tmp_result = self.find_and_download_codebases(
+                dir_listing
+            )
+            if tmp_result:    # None is interpretted as False.
+                return True
+            # Now tmp_result here must be None or False
+            if result is None:
+                result = tmp_result
+
         # TODO: Maybe the vendor information can aid us in the search,
         #       but it appears to me that the product information is
         #       enough to go on...
@@ -515,7 +562,6 @@ class SourceforgeScraper:
             cve.description, product
         )
 
-        result = None
         if name_to_search is not None:
             page = 1
             while True:
@@ -550,10 +596,16 @@ class SourceforgeScraper:
                         dir_listing = SourceforgeScraper.get_codebase_listing(
                             os.path.join(value, 'files')
                         )
+                        if dir_listing is None:
+                            # Only soft fail if we couldn't obtain a directory
+                            # listing, since we can just move on to the next.
+                            self.log.soft_fail(
+                                f'Broken like: {SOURCEFORGE_BASE_URL}{value}'
+                            )
+                            continue
 
                         # Log the directory listing for the root of the
                         # codebase.
-                        print_func = lambda x: self.log.info(x)
                         pretty_print_dir_contents(
                             dir_listing, print_func=print_func
                         )

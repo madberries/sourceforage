@@ -137,9 +137,12 @@ def wrap_text(s, width=None, indent_on_newline=0):
     return f"{first_line}\n{remaining_lines}"
 
 
-def contains_substr(s, substr):
+def contains_substr(s, substr, ignore_case=True):
     try:
-        return s.lower().index(substr.lower())
+        if ignore_case:
+             return s.lower().index(substr.lower())
+        else:
+             return s.index(substr)
     except ValueError:
         return -1
 
