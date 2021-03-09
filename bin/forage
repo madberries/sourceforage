@@ -19,6 +19,7 @@
 #                  separated)
 
 import os
+import re
 import sys
 
 # Make sure that the HACCSTA2_HOME env var is set, since we need to add this to
@@ -74,14 +75,14 @@ def write_cves_to_file(file_with_cves, cves):
 
 
 def finish_up(
-    cmd_line, missing_cves, vague_cves, cb_progress, cb_regress, found_cve, log
+    cve, missing_cves, vague_cves, cb_progress, cb_regress, found_cve, log
 ):
     # Print out a message in case we were looking for a particular CVE, and
     # we didn't find it for whatever reason.
-    if cmd_line.cve is not None and not found_cve:
+    if cve is not None and not found_cve:
         try:
             log.hard_fail(
-                f"Unable to locate CVE-{cmd_line.cve} in the provided NVD "
+                f"Unable to locate {cve} in the provided NVD "
                 'files.'
             )
         except StepFailedException:
@@ -201,6 +202,15 @@ def process_cve(cve, cmd_line, missing_cves, vague_cves, success_msg, log):
 
 
 def main(cmd_line):
+    cve_to_check = cmd_line.cve
+    if cve_to_check is not None:
+        cve_to_check = cve_to_check.upper()
+        if bool(re.match('^[0-9]+-[0-9]+$', cve_to_check)):
+            cve_to_check = 'CVE-' + cve_to_check
+        elif not bool(re.match('^CVE-[0-9]+-[0-9]+$', cve_to_check)):
+            print(f'error: Malformed CVE -- {cve_to_check}', file=sys.stderr)
+            exit(1)
+
     # Parse through all NVD files specified on the command line:
     nvd_inputs = []
     for infile in cmd_line.infiles:
@@ -266,8 +276,8 @@ def main(cmd_line):
 
                 # Check to see if we are looking for a particular CVE, and skip
                 # all of the others.
-                if cmd_line.cve is not None:
-                    if cve.cve != 'CVE-' + cmd_line.cve:
+                if cve_to_check is not None:
+                    if cve.cve != cve_to_check:
                         continue
                     else:
                         found_cve = True
@@ -307,7 +317,7 @@ def main(cmd_line):
             log.log_exception(traceback.format_exc())
         finally:
             finish_up(
-                cmd_line,
+                cve_to_check,
                 missing_cves,
                 vague_cves,
                 cb_progress,
