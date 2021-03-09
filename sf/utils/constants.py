@@ -32,7 +32,7 @@ MYSQL_REGEX = r'(mysql|db|d(ata)base)?'
 HOST_REGEX = r'(host(_?)(name)?)|address'
 USER_REGEX = r'user(_?)(name)?'
 PASS_REGEX = r'pass(word)?'
-DBNAME_REGEX = r'(d(ata)base|(?!(user|host))name)'
+DBNAME_REGEX = r'(d(ata)base|(?!(user|host))(db)?name)'
 
 # Possible Var X Value (i.e. cartesian product) of possible configuration
 # replacements

@@ -1,3 +1,6 @@
+import itertools
+import re
+
 from bs4 import BeautifulSoup
 
 from .string import make_title
@@ -52,3 +55,21 @@ def get_form_details(form):
     details["method"] = method
     details["inputs"] = inputs
     return details
+
+def fill_form(data, input_tag_name, to_match, replacement_list, log, fallback=None):
+    if fallback is not None:
+        # If there is a fallback, then we will try to match that last.
+        replacement_list = replacement_list.copy()
+        replacement_list[0].append(fallback)
+    for varname, value_to_replace in itertools.product(*replacement_list):
+        if bool(
+            re.match(
+                rf"^([^_]*_)?{varname}$", to_match
+            )
+        ):
+            data[input_tag_name] = value_to_replace
+            log.info(
+                f"Appending {input_tag_name}={value_to_replace} to the request"
+            )
+            return True
+    return False
