@@ -1,6 +1,9 @@
+import os
 import tarfile
+import tempfile
 
 from io import BytesIO
+from unrar import rarfile
 from zipfile import ZipFile
 
 from .constants import SUPPORTED_EXTS
@@ -22,6 +25,19 @@ def list_archive_contents(filename, contents):
     if filename.endswith('.zip'):
         with ZipFile(mem_zip, mode="r") as zf:
             return zf.namelist()
+    elif filename.endswith('.rar'):
+        # Unfortunately need to write to temporary file for this library...
+        tmp_file, tmp_filename = tempfile.mkstemp()
+        os.write(tmp_file, mem_zip.read())
+        os.close(tmp_file)
+
+        with rarfile.RarFile(tmp_filename) as rar:
+            filelist = [ x.filename for x in rar.filelist]
+
+        # Remove the temporary RAR file that was created, and return the
+        # archive listing.
+        os.unlink(tmp_filename)
+        return filelist
     else:
         if filename.endswith('.tar.gz') or filename.endswith('.tgz'):
             mode = 'r:gz'
@@ -42,6 +58,17 @@ def extract_archive(filename, contents, extracted_path):
     if filename.endswith('.zip'):
         with ZipFile(mem_zip, mode="r") as zf:
             zf.extractall(extracted_path)
+    elif filename.endswith('.rar'):
+        # Unfortunately need to write to temporary file for this library...
+        tmp_file, tmp_filename = tempfile.mkstemp()
+        os.write(tmp_file, mem_zip.read())
+        os.close(tmp_file)
+
+        with rarfile.RarFile(tmp_filename) as rar:
+            rar.extractall(path=extracted_path)
+
+        # Remove the temporary RAR file that was created.
+        os.unlink(tmp_filename)
     else:
         if filename.endswith('.tar.gz') or filename.endswith('.tgz'):
             mode = 'r:gz'

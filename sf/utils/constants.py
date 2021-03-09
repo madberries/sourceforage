@@ -69,7 +69,7 @@ HTTP_SERVER_PORT = 5000
 # List of supported archive extensions:
 #
 # TODO: We might want to consider supporting additional ones (like rar and 7z)
-SUPPORTED_EXTS = ['.zip', '.tar.gz', '.tgz', '.tar.bz2']
+SUPPORTED_EXTS = ['.zip', '.tar.gz', '.tgz', '.tar.bz2', '.rar']
 
 # Dictionary of CVEs capable of working end-to-end (where the mapping is the
 # CVE name to it's working configuration), and of the form:
