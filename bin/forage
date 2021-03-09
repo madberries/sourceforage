@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 #
-# usage: forage [-h] [-w] [-c] [-p] [--cve CVE] infiles [infiles ...]
+# usage: forage [-h] [-w] [--not-found] [-c] [-p] [--cve CVE]
+#               infiles [infiles ...]
 #
 # Discovers and generates PHP exploits automatically (via sourceforge) from NVD
 # json data feed
@@ -13,6 +14,8 @@
 # optional arguments:
 #   -h, --help     show this help message and exit
 #   -w, --working  run only CVEs that have been verified to work end-to-end
+#   --not-found    re-run only the codebases that weren't found on a previous
+#                  run
 #   -c, --clean    clears the foraged directory and starts foraging from scratch
 #   -p, --prompt   prompt after attempting to run an exploit end-to-end
 #   --cve CVE      only search for the specified CVE(s) of interest (comma-
@@ -202,6 +205,8 @@ def process_cve(cve, cmd_line, missing_cves, vague_cves, success_msg, log):
 
 
 def main(cmd_line):
+    # If the --cve flag was specified, then make sure the CVE is formatted
+    # correctly.
     cve_to_check = cmd_line.cve
     if cve_to_check is not None:
         cve_to_check = cve_to_check.upper()
@@ -273,6 +278,11 @@ def main(cmd_line):
             # Process each CVE in the JSON file.
             for cve_base in nvd_data['CVE_Items']:
                 cve = CVE(cve_base)
+
+                # If --not-found option was specified, then skip over any CVE
+                # that was not already previously found to be missing.
+                if cmd_line.not_found and cve.cve not in missing_cves:
+                    continue
 
                 # Check to see if we are looking for a particular CVE, and skip
                 # all of the others.
@@ -349,6 +359,11 @@ def parse_args():
         help='run only CVEs that have been verified to work end-to-end'
     )
     parser.add_argument(
+        '--not-found',
+        action='store_true',
+        help="re-run only the codebases that weren't found on a previous run"
+    )
+    parser.add_argument(
         '-c',
         '--clean',
         action='store_true',
@@ -366,7 +381,18 @@ def parse_args():
         help='only search for the specified CVE(s) of interest '
         '(comma-separated)'
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.not_found:
+        if args.cve is not None:
+            print(
+                'error: --cve cannot be used with the --not-found option',
+                file=sys.stderr
+            )
+            exit(1)
+        # Forced re-run of CVE's not found in a previous run should
+        # automatically cause a clean.
+        args.clean = True
+    return args
 
 
 if __name__ == "__main__":
