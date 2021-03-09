@@ -57,8 +57,8 @@ DBPASS_REPLACEMENTS = [
 DBROOT_REPLACEMENTS = [
     ['([a-zA-Z_\x80-\xff][a-zA-Z0-9_\x80-\xff]*)?(_(path|root))'],
     [
-        (r'\7/', '(http://localhost)/[^/]+/'),
-        (r'\7', '(http://localhost)/[^/]+')
+        (r'\7/', '(http://(localhost|127\.0\.0\.1))/[^/]+/'),
+        (r'\7', '(http://(localhost|127\.0\.0\.1))/[^/]+')
     ]
 ]  # yapf: disable
 
