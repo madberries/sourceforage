@@ -59,6 +59,10 @@ class SourceforgeScraper:
         for word in cve.description.split(' '):
             if word.endswith('.php'):
                 self.vuln_files.add(word)
+            # We have to check .php. extensions too, since the mentioned
+            # PHP file could be the last word in a sentence.
+            elif word.endswith('.php.'):
+                self.vuln_files.add(word[:-1])
         self.valid_version_ranges = []
         self.cpe_map = dict()
         self.cur_idx = 1
@@ -600,6 +604,9 @@ class SourceforgeScraper:
 
         # The injection was possible, but are there vulnerable files?
         if len(vuln_files) == 0:
+            self.log.warn(
+                'No vulnerable PHP file mentioned in the CVE description!'
+            )
             return Status.VAGUE
         else:
             # An SQL injection is possible, and there is one or more
