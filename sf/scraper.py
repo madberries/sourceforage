@@ -545,7 +545,7 @@ class SourceforgeScraper:
                 'Feeling lucky... Attempting to get directory listing'
                 f' for {SOURCEFORGE_BASE_URL}{lucky_project}...'
             )
-            for from_root in [ 'files', 'files/OldFiles' ]:
+            for from_root in ['files', 'files/OldFiles']:
                 dir_listing = SourceforgeScraper.get_codebase_listing(
                     os.path.join(lucky_project, from_root)
                 )
@@ -578,9 +578,13 @@ class SourceforgeScraper:
             name_to_search = product
 
         # First try a simple google search.
-        search_results = search(f'{name_to_search} site:sourceforge.net', num_results=10)
+        search_results = search(
+            f'{name_to_search} site:sourceforge.net', num_results=10
+        )
         for link in search_results:
-            match = re.match(r'https://sourceforge.net/(projects/[^/]*)(/?)$', link)
+            match = re.match(
+                r'https://sourceforge.net/(projects/[^/]*)(/?)$', link
+            )
             if bool(match):
                 # Make sure the page actually exists, since the search results
                 # could POSSIBLY be stale (though seemingly unlikely).
@@ -612,9 +616,11 @@ class SourceforgeScraper:
                 # the codebase from this project root (and hopefully generate
                 # and run an exploit).
                 lucky_project = match.group(1)
-                for from_root in [ 'files', 'files/OldFiles' ]:
+                for from_root in ['files', 'files/OldFiles']:
                     cb_root = os.path.join(lucky_project, from_root)
-                    self.log.info(f"Matched {lucky_project}... finding codebase {cb_root}")
+                    self.log.info(
+                        f"Matched {lucky_project}... finding codebase {cb_root}"
+                    )
                     dir_listing = SourceforgeScraper.get_codebase_listing(
                         cb_root
                     )
@@ -637,9 +643,7 @@ class SourceforgeScraper:
             self.log.info(
                 f"Searching for codebase '{name_to_search}' on page {page}..."
             )
-            results_map = SourceforgeScraper.find_codebase(
-                name_to_search, page
-            )
+            results_map = SourceforgeScraper.find_codebase(name_to_search, page)
             # Check for loop exit condition.  Eventually we will run out of
             # pages, and the results map will be empty.
             if len(results_map) == 0:
@@ -659,7 +663,7 @@ class SourceforgeScraper:
                         f"'{name_to_search}'"
                     )
 
-                    for from_root in [ 'files', 'files/OldFiles' ]:
+                    for from_root in ['files', 'files/OldFiles']:
                         # Get the root directory listing for the current
                         # codebase.
                         self.log.info(
