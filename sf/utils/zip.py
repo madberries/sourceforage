@@ -32,7 +32,7 @@ def list_archive_contents(filename, contents):
         os.close(tmp_file)
 
         with rarfile.RarFile(tmp_filename) as rar:
-            filelist = [ x.filename for x in rar.filelist]
+            filelist = [x.filename for x in rar.filelist]
 
         # Remove the temporary RAR file that was created, and return the
         # archive listing.

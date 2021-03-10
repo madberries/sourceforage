@@ -526,7 +526,7 @@ class SourceforgeScraper:
         # Construct a list of (perhaps likely) candidates with the hope of
         # obviating the need for a full search.
         print_func = lambda x: self.log.info(x)
-        feeling_lucky = [ os.path.join('projects', product) ]
+        feeling_lucky = [os.path.join('projects', product)]
         if contains_substr(product, '-', ignore_case=False) > 0:
             feeling_lucky.append(feeling_lucky[0].replace('-', '_'))
         if contains_substr(product, '_', ignore_case=False) > 0:
@@ -537,18 +537,19 @@ class SourceforgeScraper:
         # those projects.
         result = None
         for lucky_project in feeling_lucky:
-            self.log.info('Feeling lucky... Attempting to get directory listing'
-                          f' for {SOURCEFORGE_BASE_URL}{lucky_project}...')
+            self.log.info(
+                'Feeling lucky... Attempting to get directory listing'
+                f' for {SOURCEFORGE_BASE_URL}{lucky_project}...'
+            )
             dir_listing = SourceforgeScraper.get_codebase_listing(
-                os.path.join(lucky_project, 'files'))
+                os.path.join(lucky_project, 'files')
+            )
             if dir_listing is None:
                 self.log.info(
                     f"Project '{lucky_project}' not found!  Oh well, we tried."
                 )
                 continue
-            tmp_result = self.find_and_download_codebases(
-                dir_listing
-            )
+            tmp_result = self.find_and_download_codebases(dir_listing)
             if tmp_result:    # None is interpretted as False.
                 return True
             # Now tmp_result here must be None or False

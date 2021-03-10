@@ -140,9 +140,9 @@ def wrap_text(s, width=None, indent_on_newline=0):
 def contains_substr(s, substr, ignore_case=True):
     try:
         if ignore_case:
-             return s.lower().index(substr.lower())
+            return s.lower().index(substr.lower())
         else:
-             return s.index(substr)
+            return s.index(substr)
     except ValueError:
         return -1
 
