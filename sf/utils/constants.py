@@ -82,7 +82,7 @@ CAPABLE_OF_WORKING = {
     "cve-2006-0135": (False, False, False),
     "cve-2006-1271": (False, False, False),
     "cve-2006-1481": (False, False, False),
-    "cve-2006-7088": (True, False, True),
+    "cve-2006-7088": (False, False, True),
     "cve-2007-3534": (False, True, False),
     "cve-2008-0154": (False, False, True),
     "cve-2008-0159": (True, False, False),
