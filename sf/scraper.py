@@ -12,6 +12,7 @@ from bs4 import BeautifulSoup
 from datetime import datetime
 from enum import Enum
 from fuzzywuzzy import fuzz
+from googlesearch import search
 from packaging import version
 from packaging.version import LegacyVersion
 from pathlib import Path
@@ -469,14 +470,16 @@ class SourceforgeScraper:
                             result = tmp_result
             except InvalidVersionFormat:
                 msg = f"Finding matching versions in directory '{title}', " \
-                      f"where url={SOURCEFORGE_BASE_URL}/{url})..."
+                      f"where url={SOURCEFORGE_BASE_URL}{url})..."
                 self.log.new_substep(msg, caption=title)
                 try:
                     # Log the directory listing of the current working
                     # directory on sourceforge.
                     dir_listing = SourceforgeScraper.get_codebase_listing(url)
                     if dir_listing is None:
-                        self.log.hard_fail(f'Broken link: {url}')
+                        self.log.hard_fail(
+                            f'Broken link: {SOURCEFORGE_BASE_URL}{url}'
+                        )
 
                     print_func = lambda x: self.log.info(x)
                     pretty_print_dir_contents(
@@ -541,20 +544,23 @@ class SourceforgeScraper:
                 'Feeling lucky... Attempting to get directory listing'
                 f' for {SOURCEFORGE_BASE_URL}{lucky_project}...'
             )
-            dir_listing = SourceforgeScraper.get_codebase_listing(
-                os.path.join(lucky_project, 'files')
-            )
-            if dir_listing is None:
-                self.log.info(
-                    f"Project '{lucky_project}' not found!  Oh well, we tried."
+            for from_root in [ 'files', 'files/OldFiles' ]:
+                dir_listing = SourceforgeScraper.get_codebase_listing(
+                    os.path.join(lucky_project, from_root)
                 )
-                continue
-            tmp_result = self.find_and_download_codebases(dir_listing)
-            if tmp_result:    # None is interpretted as False.
-                return True
-            # Now tmp_result here must be None or False
-            if result is None:
-                result = tmp_result
+                if dir_listing is None:
+                    self.log.info(
+                        f"Project '{lucky_project}' not found!  Oh well, we tried."
+                    )
+                    # Break here, since all other from_root options will fail
+                    # as well.
+                    break
+                tmp_result = self.find_and_download_codebases(dir_listing)
+                if tmp_result:    # None is interpretted as False.
+                    return True
+                # Now tmp_result here must be None or False
+                if result is None:
+                    result = tmp_result
 
         # TODO: Maybe the vendor information can aid us in the search,
         #       but it appears to me that the product information is
@@ -562,46 +568,113 @@ class SourceforgeScraper:
         name_to_search = SourceforgeScraper.search_for_name0(
             cve.description, product
         )
+        if name_to_search is None:
+            self.log.warn(
+                'Unable to discover proper usage of the CPE product in the CVE'
+                'description.  Attempting to search for the CPE exact product'
+                f"string '{product}' verbatim..."
+            )
+            name_to_search = product
 
-        if name_to_search is not None:
-            page = 1
-            while True:
-                self.log.info(
-                    f"Searching for codebase '{name_to_search}' on page {page}"
-                    '...'
-                )
-                results_map = SourceforgeScraper.find_codebase(
-                    name_to_search, page
-                )
-                if len(results_map) == 0:
-                    self.log.info('No more codebases to search')
-                    break
-                k = 0
-                for key, value in results_map.items():
-                    if fuzz.ratio(key, name_to_search) < 65:
-                        self.log.soft_fail(
-                            f"Skipping project '{key}' due to fuzzy mismatch"
-                        )
-                    else:
-                        self.log.success(
-                            f"Found potential (fuzzy) match: '{key}' ~ "
-                            f"'{name_to_search}'",
-                        )
+        # First try a simple google search.
+        search_results = search(f'{name_to_search} site:sourceforge.net', num_results=10)
+        for link in search_results:
+            match = re.match(r'https://sourceforge.net/(projects/[^/]*)(/?)$', link)
+            if bool(match):
+                # Make sure the page actually exists, since the search results
+                # could POSSIBLY be stale (though seemingly unlikely).
+                page = requests.get(link)
+                if page.status_code != 200:
+                    self.log.warn('Dead link: {link}')
+                    continue
 
+                contents = page.content
+                soup = BeautifulSoup(contents, 'html.parser')
+
+                # Check the title of the project page, and make sure that it
+                # matches "fuzzily" to the name we are searching (like we do
+                # in the sourceforge searches).
+                title_tag = soup.find_all('meta', property='og:title')[0]
+                title = title_tag.attrs.get('content')
+                if fuzz.ratio(title, name_to_search) < 65:
+                    self.log.soft_fail(
+                        f"Skipping project '{title}' due to fuzzy mismatch"
+                    )
+                    continue
+                else:
+                    self.log.success(
+                        f"Found potential (fuzzy) match: '{title}' ~ "
+                        f"'{name_to_search}'",
+                    )
+
+                # Perhaps we located the correct project, so attempt to locate
+                # the codebase from this project root (and hopefully generate
+                # and run an exploit).
+                lucky_project = match.group(1)
+                for from_root in [ 'files', 'files/OldFiles' ]:
+                    cb_root = os.path.join(lucky_project, from_root)
+                    self.log.info(f"Matched {lucky_project}... finding codebase {cb_root}")
+                    dir_listing = SourceforgeScraper.get_codebase_listing(
+                        cb_root
+                    )
+                    if dir_listing is None:
+                        self.log.info(
+                            f"Project '{lucky_project}' not found!  Oh well, we tried."
+                        )
+                        continue
+                    tmp_result = self.find_and_download_codebases(dir_listing)
+                    if tmp_result:    # None is interpretted as False.
+                        return True
+                    # Now tmp_result here must be None or False
+                    if result is None:
+                        result = tmp_result
+
+        # We've been unlucky so far, so let's attempt to find the codebase on
+        # sourceforge directly.
+        page = 1
+        while True:
+            self.log.info(
+                f"Searching for codebase '{name_to_search}' on page {page}..."
+            )
+            results_map = SourceforgeScraper.find_codebase(
+                name_to_search, page
+            )
+            # Check for loop exit condition.  Eventually we will run out of
+            # pages, and the results map will be empty.
+            if len(results_map) == 0:
+                self.log.info('No more codebases to search')
+                break
+
+            # Iterate through every result returned on the current page.
+            k = 0
+            for key, value in results_map.items():
+                if fuzz.ratio(key, name_to_search) < 65:
+                    self.log.soft_fail(
+                        f"Skipping project '{key}' due to fuzzy mismatch"
+                    )
+                else:
+                    self.log.success(
+                        f"Found potential (fuzzy) match: '{key}' ~ "
+                        f"'{name_to_search}'"
+                    )
+
+                    for from_root in [ 'files', 'files/OldFiles' ]:
                         # Get the root directory listing for the current
                         # codebase.
                         self.log.info(
                             'Getting the directory listing for '
-                            f"{SOURCEFORGE_BASE_URL}{value}..."
+                            f"{SOURCEFORGE_BASE_URL}{value}/{from_root}..."
                         )
-                        dir_listing = SourceforgeScraper.get_codebase_listing(
-                            os.path.join(value, 'files')
+                        dir_listing = \
+                                SourceforgeScraper.get_codebase_listing(
+                            os.path.join(value, from_root)
                         )
                         if dir_listing is None:
-                            # Only soft fail if we couldn't obtain a directory
-                            # listing, since we can just move on to the next.
+                            # Only soft fail if we couldn't obtain a direct-
+                            # ory listing, since we can just move on to the
+                            # next.
                             self.log.soft_fail(
-                                f'Broken like: {SOURCEFORGE_BASE_URL}{value}'
+                                f'Broken link: {SOURCEFORGE_BASE_URL}{value}'
                             )
                             continue
 
@@ -621,13 +694,14 @@ class SourceforgeScraper:
                         if result is None:
                             result = tmp_result
 
-                        # Don't check more than five matching codebases for now
-                        # but we may want to make this configurable.
+                        # Don't check more than five matching codebases for now,
+                        # but we may want to make this configurable at some
+                        # point.
                         if k > 5:
                             self.log.warn('Skipping... Too many results!')
                             return result
                         k = k + 1
-                page += 1
+            page += 1
         return result
 
     def scrape_and_run_exploit(self):
