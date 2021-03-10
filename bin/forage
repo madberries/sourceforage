@@ -48,6 +48,8 @@ import shutil
 import signal
 import traceback
 
+from sortedcontainers import SortedSet
+
 from sf.scraper import SourceforgeScraper, Status
 from sf.utils.constants import CAPABLE_OF_WORKING, FORAGED_OUT_DIR
 from sf.utils.file import read_all_lines
@@ -57,10 +59,10 @@ from sf.utils.logging import ItemizedLogger, StepFailedException
 def load_cves_from_file(file_with_cves):
     full_path = os.path.join(FORAGED_OUT_DIR, file_with_cves)
     if not os.path.exists(full_path):
-        cves = set()
+        cves = SortedSet()
     else:
         with open(full_path, 'r') as f:
-            cves = set([x.strip() for x in f.readlines()])
+            cves = SortedSet([x.strip() for x in f.readlines()])
     return cves, full_path
 
 
@@ -72,7 +74,6 @@ def write_cves_to_file(file_with_cves, cves):
         if os.path.exists(full_path):
             os.remove(full_path)
         return
-    cves = sorted(cves)
     # Write over existing file with the new CVEs.
     with open(full_path, 'w') as f:
         for cve in cves:
@@ -260,10 +261,10 @@ def main(cmd_line):
     vague_cves, vague_file = load_cves_from_file('.vague')
 
     # Set of codebases that are newly discovered from the previous run.
-    cb_progress = set()
+    cb_progress = SortedSet()
 
     # Set of codebases that were discovered prior, but are somehow not found.
-    cb_regress = set()
+    cb_regress = SortedSet()
 
     # Initialize the logger before proceeding
     log = ItemizedLogger()

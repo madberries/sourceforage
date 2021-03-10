@@ -16,6 +16,7 @@ from googlesearch import search
 from packaging import version
 from packaging.version import LegacyVersion
 from pathlib import Path
+from sortedcontainers import SortedSet
 from urllib.parse import urljoin
 
 from .analysis import run_gaaphp
@@ -56,7 +57,7 @@ class SourceforgeScraper:
         self.check_only_verified = check_only_verified
         self.success_msg = success_msg
         self.prompt = prompt
-        self.vuln_files = set()
+        self.vuln_files = SortedSet()
         for word in cve.description.split(' '):
             if word.endswith('.php'):
                 self.vuln_files.add(word)
@@ -738,8 +739,8 @@ class SourceforgeScraper:
         else:
             # An SQL injection is possible, and there is one or more
             # vulnerable PHP files found.
-            vendors = set()
-            products = set()
+            vendors = SortedSet()
+            products = SortedSet()
             for cpe_info in cve.cpe_list_flat:
                 cpe_split = cpe_info[0].split(':')
                 vendors.add(cpe_split[3])
