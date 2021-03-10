@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 #
-# usage: forage [-h] [-w] [--not-found] [-c] [-p] [--cve CVE]
+# usage: forage [-h] [-w] [--not-found] [--success] [-c] [-p] [--cve CVE]
 #               infiles [infiles ...]
 #
 # Discovers and generates PHP exploits automatically (via sourceforge) from NVD
@@ -16,6 +16,8 @@
 #   -w, --working  run only CVEs that have been verified to work end-to-end
 #   --not-found    re-run only the codebases that weren't found on a previous
 #                  run
+#   --success      re-run only the codebases that were successfully exploited on
+#                  a previous run
 #   -c, --clean    clears the foraged directory and starts foraging from scratch
 #   -p, --prompt   prompt after attempting to run an exploit end-to-end
 #   --cve CVE      only search for the specified CVE(s) of interest (comma-
@@ -129,8 +131,8 @@ def process_cve(cve, cmd_line, missing_cves, vague_cves, success_msg, log):
             successful_cve_dirs = glob.glob(succ_pattern, recursive=False)
             num_successes = len(successful_cve_dirs)
             log.new_substep(
-                f"Already foraged this CVE ({num_attempts}/{num_successes}"
-                ' runs succeeded)',
+                f"Already foraged this CVE ({num_successes}/{num_attempts}"
+                ' codebases succeeded)',
                 caption=cve.cve
             )
             try:
@@ -284,6 +286,19 @@ def main(cmd_line):
                 if cmd_line.not_found and cve.cve not in missing_cves:
                     continue
 
+                if cmd_line.success:
+                    # Only re-running codebases where there was a prior success.
+                    cve_pattern = os.path.join(
+                        FORAGED_OUT_DIR, f"{cve.cve.lower()}_*"
+                    )
+                    succ_pattern = os.path.join(cve_pattern, '*/.success')
+                    successful_cve_dirs = glob.glob(
+                        succ_pattern, recursive=False
+                    )
+                    if len(successful_cve_dirs) == 0:
+                        # No successful codebase to run, so continue.
+                        continue
+
                 # Check to see if we are looking for a particular CVE, and skip
                 # all of the others.
                 if cve_to_check is not None:
@@ -364,6 +379,12 @@ def parse_args():
         help="re-run only the codebases that weren't found on a previous run"
     )
     parser.add_argument(
+        '--success',
+        action='store_true',
+        help=
+        "re-run only the codebases that were successfully exploited on a previous run"
+    )
+    parser.add_argument(
         '-c',
         '--clean',
         action='store_true',
@@ -382,10 +403,18 @@ def parse_args():
         '(comma-separated)'
     )
     args = parser.parse_args()
-    if args.not_found:
+    if args.not_found or args.success:
+        if args.not_found and args.success:
+            print(
+                'error: The --success and --not-found option cannot be used'
+                ' together',
+                file=sys.stderr
+            )
+            exit(1)
         if args.cve is not None:
             print(
-                'error: --cve cannot be used with the --not-found option',
+                'error: --cve cannot be used with the --success or the '
+                '--not-found option',
                 file=sys.stderr
             )
             exit(1)
