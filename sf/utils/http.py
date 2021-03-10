@@ -51,22 +51,33 @@ def get_form_details(form):
             "type": input_type, "name": input_name, "value": input_value
         })
 
+    # Additionally, we must include any textarea, since this is technically
+    # also an input field that will get appended to the query string.  Without
+    # this, the request might not process (due to missing query parameters).
+    #
+    # TODO: Are there other non-standard "<input>"-like tags we need to concern
+    #       ourselves with??
+    for input_tag in form.find_all("textarea"):
+        input_name = input_tag.attrs.get("name")
+        inputs.append({
+            "type": "textarea", "name": input_name, "value": input_tag.string
+        })
+
     details["action"] = action
     details["method"] = method
     details["inputs"] = inputs
     return details
 
-def fill_form(data, input_tag_name, to_match, replacement_list, log, fallback=None):
+
+def fill_form(
+    data, input_tag_name, to_match, replacement_list, log, fallback=None
+):
     if fallback is not None:
         # If there is a fallback, then we will try to match that last.
         replacement_list = replacement_list.copy()
         replacement_list[0].append(fallback)
     for varname, value_to_replace in itertools.product(*replacement_list):
-        if bool(
-            re.match(
-                rf"^([^_]*_)?{varname}$", to_match
-            )
-        ):
+        if bool(re.match(rf"^([^_]*_)?{varname}$", to_match)):
             data[input_tag_name] = value_to_replace
             log.info(
                 f"Appending {input_tag_name}={value_to_replace} to the request"

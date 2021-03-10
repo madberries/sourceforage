@@ -28,7 +28,7 @@ ADMINUSER = 'admin'
 ADMINPASS = 'admin'
 
 # Common Regexes:
-MYSQL_REGEX = r'(mysql|db|d(ata)base)?'
+MYSQL_REGEX = r'((my)?sql|db|d(ata)base)?'
 HOST_REGEX = r'(host(_?)(name)?)|address'
 USER_REGEX = r'user(_?)(name)?'
 PASS_REGEX = r'pass(word)?'
